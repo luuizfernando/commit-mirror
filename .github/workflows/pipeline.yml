@@ -53,33 +53,6 @@ jobs:
           path: target/site/jacoco
           if-no-files-found: ignore
 
-  dependency-check:
-    runs-on: ubuntu-latest
-    # Fork PRs and Dependabot do not receive repository secrets.
-    if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.fork == false && github.actor != 'dependabot[bot]')
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: maven
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.m2/dependency-check-data
-          key: dependency-check-data-${{ github.run_id }}
-          restore-keys: dependency-check-data-
-      - name: Scan dependencies
-        env:
-          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
-        run: ./mvnw -B dependency-check:check -DdataDirectory="$HOME/.m2/dependency-check-data"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
-        with:
-          name: dependency-check-report
-          path: target/dependency-check-report.*
-          if-no-files-found: ignore
-
   version:
     runs-on: ubuntu-latest
     outputs:
@@ -98,7 +71,7 @@ jobs:
           echo "version=${base}.${next}" >> "$GITHUB_OUTPUT"
 
   publish:
-    needs: [actionlint, build-test, dependency-check, version]
+    needs: [actionlint, build-test, version]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     env:
@@ -148,17 +121,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: dependency-check-report
-          path: reports
       - name: Create tag and release
         run: |
           previous="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
           range="${previous:+$previous..}HEAD"
           git log "$range" --pretty='- %s (%h)' --invert-grep --grep='^Commit [0-9]' -- . ':!logs' > notes.md
           [ -s notes.md ] || echo "- Maintenance release" > notes.md
-          gh release create "v${VERSION}" --target "$GITHUB_SHA" --title "v${VERSION}" --notes-file notes.md reports/*
+          gh release create "v${VERSION}" --target "$GITHUB_SHA" --title "v${VERSION}" --notes-file notes.md
 
   deploy:
     needs: [release, version]

@@ -15,7 +15,7 @@ Requires **JDK 21** on `JAVA_HOME` (the machine default may be Java 8). Use the 
 ./mvnw test                                # unit tests only
 ./mvnw test -Dtest=ClassName#method        # single unit test
 ./mvnw verify -Dit.test=HealthEndpointIT   # single integration test (failsafe)
-./mvnw dependency-check:check              # OWASP scan, not bound to verify; fails at CVSS >= 7.0; set NVD_API_KEY
+./mvnw dependency-check:check              # OWASP scan, local only (removed from CI, NVD API too slow); fails at CVSS >= 7.0; set NVD_API_KEY
 ```
 
 Integration tests use Testcontainers (real Postgres), so Docker must be running. Shell scripts in `deploy/` are linted with shellcheck and workflows with actionlint in CI.
@@ -33,4 +33,4 @@ Integration tests use Testcontainers (real Postgres), so Docker must be running.
 
 ## CI/CD and deploy
 
-`.github/workflows/pipeline.yml`: lint → `./mvnw verify` → dependency scan → compute version → build the Docker image once, smoke-test it (`deploy/smoke-test.sh`), push that exact image to Docker Hub → tag/release → deploy over SSH (`deploy/deploy.sh`), flagging the release on failure. The VPS does not clone the repo. It holds only `docker-compose.yaml`, `.env` and `deploy.sh` (in `/projects/commit-mirror`, run as root), and the pipeline only swaps the image tag. All secrets are repository-level.
+`.github/workflows/pipeline.yml`: lint → `./mvnw verify` → compute version → build the Docker image once, smoke-test it (`deploy/smoke-test.sh`), push that exact image to Docker Hub → tag/release → deploy over SSH (`deploy/deploy.sh`), flagging the release on failure. The VPS does not clone the repo. It holds only `docker-compose.yaml`, `.env` and `deploy.sh` (in `/projects/commit-mirror`, run as root), and the pipeline only swaps the image tag. All secrets are repository-level.
