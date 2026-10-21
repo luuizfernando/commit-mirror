@@ -31,3 +31,11 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Secrets and local config ###
+.env
+*.env.local
+
+### Logs and reports ###
+*.log
+dependency-check-report.*
