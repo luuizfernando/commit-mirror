@@ -18,8 +18,8 @@ Um bot do Telegram recebe o comando `/commit <mensagem>` por webhook. A API Spri
 Telegram (chat com o bot)
    -> Webhook HTTPS (proxy reverso)
    -> API Spring Boot (commit-mirror)
-        -> Postgres (registro, contador diário, idempotência)
-        -> GitHub Contents API (commit em logs/AAAA-MM.md)
+        -> Postgres (registro, contador global, idempotência)
+        -> GitHub Contents API (commit em commit-logs/AAAA-MM.md)
    <- Resposta de confirmação ou erro no Telegram
 ```
 
@@ -47,7 +47,7 @@ O `/commit` é implementado com o **Command Pattern**. Na v1 existe apenas o `/c
 
 ### 2.5 Repositório e arquivo de log
 
-- Os logs ficam em `logs/AAAA-MM.md`, um arquivo por mês, com uma linha por commit.
+- Os logs ficam em `commit-logs/AAAA-MM.md`, um arquivo por mês, com uma linha por commit.
 - O commit é feito na branch `main`.
 
 ### 2.6 Formato do commit
@@ -66,12 +66,15 @@ Tabela `commit_log`:
 |---|---|
 | `id` | Chave primária |
 | `telegram_update_id` | Único. Garante idempotência |
+| `chat_id` | Chat de origem, usado para responder também no reprocessamento |
 | `message` | Texto digitado no comando |
-| `commit_date` | Data local do commit (define o arquivo `logs/AAAA-MM.md`) |
+| `commit_date` | Data local do commit (define o arquivo `commit-logs/AAAA-MM.md`) |
 | `sequence_number` | Número global do commit, único |
-| `created_at` | Timestamp de criação |
+| `created_at` | Timestamp de criação (vira a data author/committer no GitHub) |
+| `updated_at` | Última transição de estado (espaça as tentativas de recuperação) |
 | `status` | `PENDING`, `SUCCESS` ou `FAILED` |
-| `github_commit_sha` | Preenchido em caso de sucesso |
+| `github_commit_sha` | Preenchido em caso de sucesso (nulo se a linha já existia no arquivo) |
+| `attempt_count` | Falhas acumuladas; limita o reprocessamento automático (`RECOVERY_MAX_ATTEMPTS`, padrão 3) |
 
 ### 2.8 Fluxo principal
 
@@ -99,7 +102,9 @@ Tabela `commit_log`:
 - **Colisão do contador:** a restrição única em `sequence_number` gera retry em nova transação.
 - **Assincronia:** o webhook valida, grava `PENDING` e responde 200 imediatamente; o GitHub é processado em uma fila de um único worker (que também serializa a escrita no arquivo) e o resultado chega por mensagem no Telegram. Registros `PENDING` antigos e `FAILED` são reprocessados por um job de recuperação, mantendo o mesmo número.
 - **Resposta perdida:** antes de acrescentar, verifica se a linha `Commit N` já existe no arquivo, evitando duplicata em retry.
-- **Falha definitiva:** o registro permanece `FAILED`, o usuário é avisado no Telegram e o commit pode ser reprocessado, preservando o mesmo número do dia.
+- **Falha definitiva:** o registro permanece `FAILED` e mantém o número. O usuário recebe um aviso na primeira falha ("vou tentar novamente") e outro na falha definitiva, depois de `RECOVERY_MAX_ATTEMPTS` tentativas; as intermediárias são silenciosas. Depois de corrigida a causa, zerar `attempt_count` reabre o reprocessamento (ver `docs/RUNBOOK.md`).
+- **Circuit breaker:** só falhas transitórias (5xx, 429, I/O) contam. 409 e recusas (401/403/404/422) não contam, pois não indicam indisponibilidade. Aberto, as chamadas falham rápido com "GitHub indisponível".
+- **Concorrência:** a serialização cobre uma única instância. Com mais de uma, seria necessário um lock distribuído (por exemplo `pg_advisory_lock`); fora do escopo da v1. O 409 continua tratado como rede de segurança (por exemplo, um commit manual no mesmo arquivo).
 
 ### 2.11 Infra e deploy
 
@@ -118,7 +123,7 @@ Red -> Green -> Refactor, um teste por vez; nenhuma regra de negócio sem teste 
 ### 2.14 CI/CD (GitHub Actions)
 
 - Workflow único (`.github/workflows/pipeline.yml`): `actionlint`, `build-test` (`mvn verify`), `dependency-check` (plugin Maven, falha com CVSS >= 7.0) e `version` em paralelo; depois `publish` -> `release` -> `deploy`. O CD só roda se todo o CI passar.
-- **Gatilho:** push na `main` com `paths-ignore` em `logs/**` (e docs), porque os commits do bot usam um PAT e disparariam o pipeline. Nenhum job escreve na `main`. Pull requests rodam apenas o CI, sem secrets de fork; `pull_request_target` não é usado.
+- **Gatilho:** push na `main` com `paths-ignore` em `commit-logs/**` (e docs), porque os commits do bot usam um PAT e disparariam o pipeline. Nenhum job escreve na `main`. Pull requests rodam apenas o CI, sem secrets de fork; `pull_request_target` não é usado.
 - **Versionamento SemVer:** `X.Y` vem do `revision` do `pom.xml`; `Z` é a próxima tag `vX.Y.*`. Sem commit do pipeline e sem depender de Conventional Commits. Imagem com tags imutáveis `X.Y.Z` e `sha-<commit>`, sem `latest`, e labels OCI. Tag Git, GitHub Release e tag da imagem usam a mesma versão.
 - A imagem é construída uma vez, passa por smoke test e é essa mesma imagem que é publicada.
 - **Deploy:** SSH com chave dedicada, forced command e host key fixada; healthcheck e rollback automático para a tag anterior. As migrations do Flyway são sempre aditivas, porque o rollback da aplicação não desfaz o banco.

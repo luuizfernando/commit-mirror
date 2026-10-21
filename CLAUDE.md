@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Spring Boot service that mirrors work commits to a public GitHub log so they count on the contribution graph. Flow: `/commit <msg>` in a Telegram bot → webhook → API records it in Postgres and appends a line to `logs/AAAA-MM.md` in this repo via the GitHub Contents API (explicit author/committer/dates). The typed message text is never written to the repo or logs. Log line and commit message are just `Commit N` (global, never-resetting counter, column `sequence_number` with `UNIQUE`).
+Spring Boot service that mirrors work commits to a public GitHub log so they count on the contribution graph. Flow: `/commit <msg>` in a Telegram bot → webhook → API records it in Postgres and appends a line to `commit-logs/AAAA-MM.md` in this repo via the GitHub Contents API (explicit author/committer/dates). The typed message text is never written to the repo or logs. Log line and commit message are just `Commit N` (global, never-resetting counter, column `sequence_number` with `UNIQUE`).
 
 ## Commands
 
@@ -24,12 +24,13 @@ Integration tests use Testcontainers (real Postgres), so Docker must be running.
 
 - Spring Boot **4.1** (Spring Framework 7, Jackson 3 under `tools.jackson`, JUnit 6, modular starters). Use `@MockitoBean`, not `@MockBean`.
 - No Lombok; DTOs are records. External HTTP uses Spring `RestClient` (no Telegram library).
-- Resilience4j is planned via core modules configured programmatically, not the Boot 3 starter.
 - `build-info` is enabled and `finalName` is `app`; version comes from `${revision}`.
 - JaCoCo `verify` gates: ≥80% line coverage on `service` and `domain` packages, ≥70% on the bundle. `config`, `dto`, `exception` and the application class are excluded.
 - Schema is managed by Flyway; `ddl-auto: validate`, `open-in-view: false`.
 - Actuator runs on a separate management port (`MANAGEMENT_PORT`, default 8081), exposing only `health` and `info` with probes. `HealthEndpointIT` asserts this.
-- Config comes from env vars (`DB_URL`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `SERVER_PORT`, `MANAGEMENT_PORT`); see `.env.example`.
+- Config comes from env vars (`DB_URL`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `SERVER_PORT`, `MANAGEMENT_PORT`, `TELEGRAM_*`, `APP_GITHUB_PAT`, `GITHUB_*`, `GIT_AUTHOR_*`, `RECOVERY_*`); see `.env.example` and `docs/RUNBOOK.md`. The app refuses to start without the Telegram and GitHub secrets.
+- Resilience4j runs as core modules configured in `config/ResilienceConfig`; GitHub writes are serialized through `LogWriteSerializer` (single worker) and unfinished commits are re-queued by `PendingRecoveryService`.
+- Integration tests extend `AbstractFlowIT` (real Postgres + stateful `FakeGitHubServer`/`FakeTelegramServer` in `src/test/.../support`, also runnable standalone for manual tests, see `docs/TESTE-LOCAL.md`).
 
 ## CI/CD and deploy
 

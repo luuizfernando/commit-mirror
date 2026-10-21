@@ -25,6 +25,28 @@ management:
       probes:
         enabled: true
 
+app:
+  time-zone: ${APP_TIME_ZONE:America/Sao_Paulo}
+  telegram:
+    bot-token: ${TELEGRAM_BOT_TOKEN:}
+    webhook-secret: ${TELEGRAM_WEBHOOK_SECRET:}
+    allowed-user-id: ${TELEGRAM_ALLOWED_USER_ID:}
+    base-url: ${TELEGRAM_BASE_URL:https://api.telegram.org}
+  github:
+    token: ${APP_GITHUB_PAT:}
+    owner: ${GITHUB_OWNER:}
+    repo: ${GITHUB_REPO:}
+    branch: ${GITHUB_BRANCH:main}
+    base-url: ${GITHUB_API_URL:https://api.github.com}
+    logs-directory: ${LOGS_DIRECTORY:commit-logs}
+    author-name: ${GIT_AUTHOR_NAME:}
+    author-email: ${GIT_AUTHOR_EMAIL:}
+  recovery:
+    enabled: ${RECOVERY_ENABLED:true}
+    interval: ${RECOVERY_INTERVAL:60s}
+    min-age: ${RECOVERY_MIN_AGE:5m}
+    max-attempts: ${RECOVERY_MAX_ATTEMPTS:3}
+
 logging:
   level:
     '[org.springframework.web.client]': INFO

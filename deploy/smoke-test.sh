@@ -23,6 +23,9 @@ docker run -d --name "$DB" --network "$NETWORK" \
 sleep 8
 docker run -d --name "$APP" --network "$NETWORK" \
   -e DB_URL="jdbc:postgresql://$DB:5432/smoke" -e POSTGRES_USER=smoke -e POSTGRES_PASSWORD=smoke \
+  -e TELEGRAM_BOT_TOKEN=smoke -e TELEGRAM_WEBHOOK_SECRET=smoke -e TELEGRAM_ALLOWED_USER_ID=1 \
+  -e APP_GITHUB_PAT=smoke -e GITHUB_OWNER=smoke -e GITHUB_REPO=smoke \
+  -e GIT_AUTHOR_NAME=smoke -e GIT_AUTHOR_EMAIL=smoke@example.com \
   "$IMAGE" >/dev/null
 
 for _ in $(seq 1 40); do

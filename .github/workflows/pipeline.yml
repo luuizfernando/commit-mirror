@@ -3,9 +3,9 @@ name: pipeline
 on:
   push:
     branches: [main]
-    # The bot commits only under logs/**; pure log commits must not trigger the pipeline.
+    # The bot commits only under commit-logs/**; pure log commits must not trigger the pipeline.
     paths-ignore:
-      - 'logs/**'
+      - 'commit-logs/**'
       - 'ADR/**'
       - '**/*.md'
       - 'LICENSE'
@@ -125,7 +125,7 @@ jobs:
         run: |
           previous="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
           range="${previous:+$previous..}HEAD"
-          git log "$range" --pretty='- %s (%h)' --invert-grep --grep='^Commit [0-9]' -- . ':!logs' > notes.md
+          git log "$range" --pretty='- %s (%h)' --invert-grep --grep='^Commit [0-9]' -- . ':!commit-logs' > notes.md
           [ -s notes.md ] || echo "- Maintenance release" > notes.md
           gh release create "v${VERSION}" --target "$GITHUB_SHA" --title "v${VERSION}" --notes-file notes.md
 
