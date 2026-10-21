@@ -9,7 +9,7 @@ NETWORK="smoke-net-$SUFFIX"
 DB="smoke-db-$SUFFIX"
 APP="smoke-app-$SUFFIX"
 
-# shellcheck disable=SC2329 # invoked through trap
+# shellcheck disable=SC2317,SC2329 # invoked through trap (older shellcheck reports SC2317, newer SC2329)
 cleanup() {
   docker rm -f "$APP" "$DB" >/dev/null 2>&1 || true
   docker network rm "$NETWORK" >/dev/null 2>&1 || true
