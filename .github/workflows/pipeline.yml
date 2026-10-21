@@ -132,6 +132,8 @@ jobs:
   deploy:
     needs: [release, version]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     env:
       VERSION: ${{ needs.version.outputs.version }}
       GH_TOKEN: ${{ github.token }}
