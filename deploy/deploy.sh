@@ -2,11 +2,12 @@
 # Runs on the VPS (as the SSH forced command and for manual rollback):
 set -euo pipefail
 
-APP_DIR="${APP_DIR:-/projects/commit-mirror}"
+# Each stack (production, homolog) keeps its own copy of this script next to its compose file and .env.
+APP_DIR="${APP_DIR:-$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")}"
 HEALTH_TIMEOUT_SECONDS="${HEALTH_TIMEOUT_SECONDS:-120}"
 TAG="${1:-${SSH_ORIGINAL_COMMAND:-}}"
 
-if [[ ! "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+if [[ ! "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
   echo "Invalid or missing version tag" >&2
   exit 2
 fi

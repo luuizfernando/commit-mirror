@@ -34,4 +34,11 @@ Integration tests use Testcontainers (real Postgres), so Docker must be running.
 
 ## CI/CD and deploy
 
-`.github/workflows/pipeline.yml`: lint → `./mvnw verify` → compute version → build the Docker image once, smoke-test it (`deploy/smoke-test.sh`), push that exact image to Docker Hub → tag/release → deploy over SSH (`deploy/deploy.sh`), flagging the release on failure. The VPS does not clone the repo. It holds only `docker-compose.yaml`, `.env` and `deploy.sh` (in `/projects/commit-mirror`, run as root), and the pipeline only swaps the image tag. All secrets are repository-level.
+`.github/workflows/pipeline.yml`: lint → `./mvnw verify` → compute version → build the Docker image once, smoke-test it (`deploy/smoke-test.sh`), push that exact image to Docker Hub → tag/release → deploy over SSH (`deploy/deploy.sh`), flagging the release on failure. The VPS does not clone the repo. It holds only `docker-compose.yaml`, `.env` and `deploy.sh` per stack (run as root), and the pipeline only swaps the image tag.
+
+Environments by branch, promoted dev → homolog → main via PRs (Dependabot targets `dev`):
+- `dev`: lint + tests only, no image or deploy. Local development.
+- `homolog`: image `X.Y.Z-rc.<run_number>` (no tag/release), deployed to `/projects/commit-mirror-homolog` (port 8090, `bot-homolog.luuizfernando.tech`, own bot, DB and log repo).
+- `main`: release `X.Y.Z` + tag, deployed to `/projects/commit-mirror` (port 8080, `bot.luuizfernando.tech`).
+
+The deploy job uses GitHub Environments `production`/`homolog`. Secrets are repository-level except `VPS_SSH_KEY` in `homolog`, a separate key whose forced command is the homolog `deploy.sh` (which uses its own directory as `APP_DIR`). Setup steps are in the README, under "Ambientes".
