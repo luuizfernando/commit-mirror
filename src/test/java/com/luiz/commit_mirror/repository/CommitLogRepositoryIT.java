@@ -84,8 +84,6 @@ class CommitLogRepositoryIT {
 			.toList();
 	}
 
-	// schema
-
 	@Test
 	void shouldApplyFlywayMigration() {
 		Integer applied = jdbcTemplate.queryForObject(
@@ -102,8 +100,6 @@ class CommitLogRepositoryIT {
 
 		assertThat(loaded).usingRecursiveComparison().isEqualTo(saved);
 	}
-
-	// constraints
 
 	@Test
 	void shouldRejectDuplicateTelegramUpdateId() {
@@ -122,8 +118,6 @@ class CommitLogRepositoryIT {
 				() -> repository.saveAndFlush(CommitLog.create(2L, 100L, "typed", LocalDate.of(2026, 10, 21), 1L, NOW)))
 			.isInstanceOf(DataIntegrityViolationException.class);
 	}
-
-	// sequence and lookups
 
 	@Test
 	void shouldReturnZeroMaxSequenceWhenThereAreNoCommits() {
@@ -151,8 +145,6 @@ class CommitLogRepositoryIT {
 
 		assertThat(repository.existsByTelegramUpdateId(2L)).isFalse();
 	}
-
-	// stale pending lookup
 
 	@Test
 	void shouldFindPendingCreatedBeforeThreshold() {
@@ -190,8 +182,6 @@ class CommitLogRepositoryIT {
 
 		assertThat(stalePendingIds()).containsExactly(first.getId(), second.getId());
 	}
-
-	// retryable failed lookup
 
 	@Test
 	void shouldFindFailedWithAttemptsLeftUpdatedBeforeThreshold() {

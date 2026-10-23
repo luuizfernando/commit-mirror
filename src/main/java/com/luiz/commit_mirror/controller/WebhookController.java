@@ -5,7 +5,6 @@ import org.springframework.web.bind.annotation.*;
 import com.luiz.commit_mirror.dto.TelegramUpdate;
 import com.luiz.commit_mirror.service.UpdateDispatcher;
 
-/** The secret header is checked earlier, by {@link WebhookSecretInterceptor}. */
 @RestController
 @RequestMapping("/telegram/webhook")
 public class WebhookController {

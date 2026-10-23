@@ -103,7 +103,7 @@ class RestClientGitHubContentsGatewayIT {
 	}
 
 	private String appendCommitOne() {
-		return gateway.appendLine(PATH, "Commit 1", "Commit 1", WHEN);
+		return gateway.appendLineIfAbsent(PATH, "Commit 1", "Commit 1", WHEN);
 	}
 
 	private String putBodyText() {
@@ -119,8 +119,6 @@ class RestClientGitHubContentsGatewayIT {
 	private static String person(String date) {
 		return "{\"name\":\"Author Name\",\"email\":\"author@example.com\",\"date\":\"" + date + "\"}";
 	}
-
-	// file content
 
 	@Test
 	void shouldCreateFileWithTheLineWhenMonthFileDoesNotExist() {
@@ -145,7 +143,7 @@ class RestClientGitHubContentsGatewayIT {
 		stubExistingFile("Commit 1\nCommit 2\n");
 		stubPutOk();
 
-		gateway.appendLine(PATH, "Commit 3", "Commit 3", WHEN);
+		gateway.appendLineIfAbsent(PATH, "Commit 3", "Commit 3", WHEN);
 
 		assertThat(putBodyText()).isEqualTo("Commit 1\nCommit 2\nCommit 3\n");
 	}
@@ -166,7 +164,7 @@ class RestClientGitHubContentsGatewayIT {
 		stubGetBody("{\"sha\":\"file-sha\",\"content\":\"" + encoded + "\"}");
 		stubPutOk();
 
-		gateway.appendLine(PATH, "Commit 2", "Commit 2", WHEN);
+		gateway.appendLineIfAbsent(PATH, "Commit 2", "Commit 2", WHEN);
 
 		assertThat(putBodyText()).isEqualTo("Commit 1\nCommit 2\n");
 	}
@@ -176,7 +174,7 @@ class RestClientGitHubContentsGatewayIT {
 		stubExistingFile("Commit 1");
 		stubPutOk();
 
-		gateway.appendLine(PATH, "Commit 2", "Commit 2", WHEN);
+		gateway.appendLineIfAbsent(PATH, "Commit 2", "Commit 2", WHEN);
 
 		assertThat(putBodyText()).isEqualTo("Commit 1\nCommit 2\n");
 	}
@@ -186,12 +184,10 @@ class RestClientGitHubContentsGatewayIT {
 		stubExistingFile("Commit 1\n");
 		stubPutOk();
 
-		gateway.appendLine(PATH, "Commit 2", "Commit 2", WHEN);
+		gateway.appendLineIfAbsent(PATH, "Commit 2", "Commit 2", WHEN);
 
 		server.verify(putRequest().withRequestBody(matchingJsonPath("$.sha", equalTo("file-sha"))));
 	}
-
-	// idempotency
 
 	@Test
 	void shouldReturnNullWhenLineIsAlreadyPresent() {
@@ -228,8 +224,6 @@ class RestClientGitHubContentsGatewayIT {
 		assertThat(putBodyText()).isEqualTo("Commit 10\nCommit 1\n");
 	}
 
-	// commit metadata
-
 	@Test
 	void shouldSendAuthorWithExplicitDate() {
 		stubNewFileWrite();
@@ -253,7 +247,7 @@ class RestClientGitHubContentsGatewayIT {
 	void shouldTruncateCommitDateToSeconds() {
 		stubNewFileWrite();
 
-		gateway.appendLine(PATH, "Commit 1", "Commit 1", Instant.parse("2026-10-21T15:00:00.987654Z"));
+		gateway.appendLineIfAbsent(PATH, "Commit 1", "Commit 1", Instant.parse("2026-10-21T15:00:00.987654Z"));
 
 		server.verify(putRequest().withRequestBody(matchingJsonPath("$.author.date", equalTo("2026-10-21T15:00:00Z"))));
 	}
@@ -280,7 +274,7 @@ class RestClientGitHubContentsGatewayIT {
 	void shouldSendTheGivenCommitMessage() {
 		stubNewFileWrite();
 
-		gateway.appendLine(PATH, "Commit 1", "Commit message 1", WHEN);
+		gateway.appendLineIfAbsent(PATH, "Commit 1", "Commit message 1", WHEN);
 
 		server.verify(putRequest().withRequestBody(matchingJsonPath("$.message", equalTo("Commit message 1"))));
 	}
@@ -310,14 +304,12 @@ class RestClientGitHubContentsGatewayIT {
 		assertThat(appendCommitOne()).isEqualTo("commit-sha-1");
 	}
 
-	// error handling
-
 	@Test
 	void shouldMapConflictOnWriteToGitHubConflictException() {
 		stubExistingFile("Commit 1\n");
 		stubStatus(put(urlPathEqualTo(API_PATH)), 409);
 
-		assertThatThrownBy(() -> gateway.appendLine(PATH, "Commit 2", "Commit 2", WHEN))
+		assertThatThrownBy(() -> gateway.appendLineIfAbsent(PATH, "Commit 2", "Commit 2", WHEN))
 			.isInstanceOf(GitHubConflictException.class);
 	}
 
@@ -367,8 +359,6 @@ class RestClientGitHubContentsGatewayIT {
 
 		assertThatThrownBy(this::appendCommitOne).isInstanceOf(GitHubTransientException.class);
 	}
-
-	// secret protection
 
 	@Test
 	void shouldNotLeakTokenWhenGitHubRejectsTheRequest() {

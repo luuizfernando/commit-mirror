@@ -67,11 +67,10 @@ class CommitProcessingServiceTest {
 		return CommitLog.create(10L, CHAT_ID, TYPED_TEXT, LocalDate.of(2026, 10, 21), 7L, CREATED);
 	}
 
-	/** A FAILED record that already used {@code failures} attempts, as the recovery job would find it. */
-	private static CommitLog failedLog(int failures) {
+	private static CommitLog failedLogWithAttempts(int attempts) {
 		CommitLog log = pendingLog();
 		log.markFailed(CREATED);
-		for (int i = 1; i < failures; i++) {
+		for (int i = 1; i < attempts; i++) {
 			log.reopen(CREATED);
 			log.markFailed(CREATED);
 		}
@@ -96,8 +95,6 @@ class CommitProcessingServiceTest {
 		verify(telegramClient).sendMessage(eq(CHAT_ID), text.capture());
 		return text.getValue();
 	}
-
-	// happy path
 
 	@Test
 	void shouldMarkRecordAsSuccessWhenWriterSucceeds() {
@@ -199,11 +196,9 @@ class CommitProcessingServiceTest {
 		verify(telegramClient).sendMessage(CHAT_ID, "Commit 7 registrado.");
 	}
 
-	// reprocessing
-
 	@Test
 	void shouldWriteTheSameSequenceWhenReprocessingFailedRecord() {
-		stored(failedLog(1));
+		stored(failedLogWithAttempts(1));
 		writerReturns("sha-2");
 
 		service.process(ID);
@@ -213,7 +208,7 @@ class CommitProcessingServiceTest {
 
 	@Test
 	void shouldMarkReprocessedFailedRecordAsSuccess() {
-		CommitLog log = stored(failedLog(1));
+		CommitLog log = stored(failedLogWithAttempts(1));
 		writerReturns("sha-2");
 
 		service.process(ID);
@@ -260,8 +255,6 @@ class CommitProcessingServiceTest {
 
 		assertThat(logs.hasEventAt(Level.WARN)).isTrue();
 	}
-
-	// GitHub failures
 
 	@Test
 	void shouldMarkRecordAsFailedWhenGitHubIsUnavailable() {
@@ -335,7 +328,7 @@ class CommitProcessingServiceTest {
 
 	@Test
 	void shouldCountTheAttemptOnIntermediateFailure() {
-		CommitLog log = stored(failedLog(1));
+		CommitLog log = stored(failedLogWithAttempts(1));
 		writerThrows(new GitHubTransientException("down"));
 
 		service.process(ID);
@@ -345,7 +338,7 @@ class CommitProcessingServiceTest {
 
 	@Test
 	void shouldNotNotifyOnIntermediateFailure() {
-		stored(failedLog(1));
+		stored(failedLogWithAttempts(1));
 		writerThrows(new GitHubTransientException("down"));
 
 		service.process(ID);
@@ -355,7 +348,7 @@ class CommitProcessingServiceTest {
 
 	@Test
 	void shouldCountTheAttemptOnFinalFailure() {
-		CommitLog log = stored(failedLog(2));
+		CommitLog log = stored(failedLogWithAttempts(2));
 		writerThrows(new GitHubTransientException("down"));
 
 		service.process(ID);
@@ -365,15 +358,13 @@ class CommitProcessingServiceTest {
 
 	@Test
 	void shouldTellUserItGaveUpOnFinalFailure() {
-		stored(failedLog(2));
+		stored(failedLogWithAttempts(2));
 		writerThrows(new GitHubTransientException("down"));
 
 		service.process(ID);
 
 		assertThat(sentText()).contains("definitivamente");
 	}
-
-	// unexpected failures
 
 	@Test
 	void shouldMarkRecordAsFailedOnUnexpectedFailure() {
@@ -405,8 +396,6 @@ class CommitProcessingServiceTest {
 		assertThat(sentText()).contains("erro inesperado");
 	}
 
-	// Telegram failures
-
 	@Test
 	void shouldKeepSuccessWhenTelegramNotificationFails() {
 		CommitLog log = stored(pendingLog());
@@ -428,8 +417,6 @@ class CommitProcessingServiceTest {
 
 		assertThat(logs.hasEventAt(Level.WARN)).isTrue();
 	}
-
-	// privacy
 
 	@Test
 	void shouldNeverSendTypedTextToTheWriter() {

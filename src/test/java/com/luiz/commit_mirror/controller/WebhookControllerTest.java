@@ -35,8 +35,7 @@ class WebhookControllerTest {
 
 	private static final String WRONG_SECRET = "wrong";
 
-	/** Real Telegram payloads carry more fields than the DTOs map; they must be ignored. */
-	private static final String COMMIT_UPDATE = """
+	private static final String COMMIT_UPDATE_WITH_UNMAPPED_FIELDS = """
 			{"update_id": 10, "message": {"message_id": 5, "from": {"id": 42, "is_bot": false},
 			 "chat": {"id": 100, "type": "private"}, "text": "/commit hello", "date": 1700000000}}""";
 
@@ -64,23 +63,21 @@ class WebhookControllerTest {
 		doThrow(new InvalidWebhookSecretException()).when(secretValidator).validate(secret);
 	}
 
-	// happy path
-
 	@Test
 	void shouldReturnEmpty200ForValidUpdate() throws Exception {
-		postWithSecret(VALID_SECRET, COMMIT_UPDATE).andExpect(status().isOk()).andExpect(content().string(""));
+		postWithSecret(VALID_SECRET, COMMIT_UPDATE_WITH_UNMAPPED_FIELDS).andExpect(status().isOk()).andExpect(content().string(""));
 	}
 
 	@Test
 	void shouldValidateTheSecretFromTheHeader() throws Exception {
-		postWithSecret(VALID_SECRET, COMMIT_UPDATE);
+		postWithSecret(VALID_SECRET, COMMIT_UPDATE_WITH_UNMAPPED_FIELDS);
 
 		verify(secretValidator).validate(VALID_SECRET);
 	}
 
 	@Test
 	void shouldDispatchTheDeserializedUpdate() throws Exception {
-		postWithSecret(VALID_SECRET, COMMIT_UPDATE);
+		postWithSecret(VALID_SECRET, COMMIT_UPDATE_WITH_UNMAPPED_FIELDS);
 
 		verify(dispatcher).dispatch(new TelegramUpdate(10L,
 				new TelegramMessage(5L, new TelegramUser(42L), new TelegramChat(100L), "/commit hello")));
@@ -98,20 +95,18 @@ class WebhookControllerTest {
 		verify(dispatcher).dispatch(new TelegramUpdate(11L, new TelegramMessage(6L, null, new TelegramChat(100L), null)));
 	}
 
-	// authentication
-
 	@Test
 	void shouldReturnEmpty403WhenSecretIsInvalid() throws Exception {
 		secretIsRejected(WRONG_SECRET);
 
-		postWithSecret(WRONG_SECRET, COMMIT_UPDATE).andExpect(status().isForbidden()).andExpect(content().string(""));
+		postWithSecret(WRONG_SECRET, COMMIT_UPDATE_WITH_UNMAPPED_FIELDS).andExpect(status().isForbidden()).andExpect(content().string(""));
 	}
 
 	@Test
 	void shouldReturn403WhenSecretHeaderIsMissing() throws Exception {
 		secretIsRejected(null);
 
-		mockMvc.perform(webhook(COMMIT_UPDATE)).andExpect(status().isForbidden());
+		mockMvc.perform(webhook(COMMIT_UPDATE_WITH_UNMAPPED_FIELDS)).andExpect(status().isForbidden());
 	}
 
 	@Test
@@ -132,12 +127,10 @@ class WebhookControllerTest {
 	void shouldNotDispatchWhenSecretIsInvalid() throws Exception {
 		secretIsRejected(WRONG_SECRET);
 
-		postWithSecret(WRONG_SECRET, COMMIT_UPDATE);
+		postWithSecret(WRONG_SECRET, COMMIT_UPDATE_WITH_UNMAPPED_FIELDS);
 
 		verifyNoInteractions(dispatcher);
 	}
-
-	// malformed input
 
 	@Test
 	void shouldReturnEmpty400WhenBodyIsMalformed() throws Exception {

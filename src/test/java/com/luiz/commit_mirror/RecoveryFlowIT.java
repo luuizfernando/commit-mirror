@@ -28,7 +28,6 @@ class RecoveryFlowIT extends AbstractFlowIT {
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
 
-	/** The worker is a single FIFO thread: once a no-op runs, everything queued before it has finished. */
 	private void awaitQueuedWork() {
 		serializer.submit(() -> {
 		}).join();
@@ -40,21 +39,20 @@ class RecoveryFlowIT extends AbstractFlowIT {
 		awaitOnlyRecordStatus(CommitStatus.FAILED);
 	}
 
-	/** Moves time past the minimum age (0s here) so the record is eligible, then runs one recovery cycle. */
-	private void runRecovery() {
+	private void advanceTimeAndRunRecovery() {
 		CLOCK.advance(Duration.ofSeconds(1));
 		githubCircuitBreaker.reset();
 		recovery.recover();
 	}
 
 	private void awaitAttemptCount(int expected) {
-		await().atMost(timeout()).untilAsserted(() -> assertThat(only().getAttemptCount()).isEqualTo(expected));
+		await().atMost(timeout()).untilAsserted(() -> assertThat(onlyRecord().getAttemptCount()).isEqualTo(expected));
 	}
 
 	private void failUntilAttemptsAreExhausted() {
 		commitWhileGitHubIsDown();
 		for (int attempt = 2; attempt <= MAX_ATTEMPTS; attempt++) {
-			runRecovery();
+			advanceTimeAndRunRecovery();
 			awaitAttemptCount(attempt);
 		}
 		awaitTelegramMessages(2);
@@ -63,41 +61,38 @@ class RecoveryFlowIT extends AbstractFlowIT {
 	private void reprocessOnceGitHubIsBack() {
 		commitWhileGitHubIsDown();
 		GITHUB.recover();
-		runRecovery();
+		advanceTimeAndRunRecovery();
 		awaitOnlyRecordStatus(CommitStatus.SUCCESS);
 	}
 
-	/** The PUT succeeded but its response was lost, so the record never left FAILED. */
 	private void simulateLostSuccessResponse() {
 		postCommit(1L, "x");
 		awaitOnlyRecordStatus(CommitStatus.SUCCESS);
 		jdbcTemplate.update("update commit_log set status = 'FAILED', attempt_count = 1, updated_at = ?",
 				Timestamp.from(CLOCK.instant()));
-		runRecovery();
+		advanceTimeAndRunRecovery();
 		awaitOnlyRecordStatus(CommitStatus.SUCCESS);
 	}
-
-	// first failure
 
 	@Test
 	void shouldMarkRecordAsFailedWhenGitHubIsDown() {
 		commitWhileGitHubIsDown();
 
-		assertThat(only().getStatus()).isEqualTo(CommitStatus.FAILED);
+		assertThat(onlyRecord().getStatus()).isEqualTo(CommitStatus.FAILED);
 	}
 
 	@Test
 	void shouldKeepTheSequenceNumberWhenGitHubIsDown() {
 		commitWhileGitHubIsDown();
 
-		assertThat(only().getSequenceNumber()).isEqualTo(1L);
+		assertThat(onlyRecord().getSequenceNumber()).isEqualTo(1L);
 	}
 
 	@Test
 	void shouldCountTheFirstAttemptWhenGitHubIsDown() {
 		commitWhileGitHubIsDown();
 
-		assertThat(only().getAttemptCount()).isEqualTo(1);
+		assertThat(onlyRecord().getAttemptCount()).isEqualTo(1);
 	}
 
 	@Test
@@ -108,13 +103,11 @@ class RecoveryFlowIT extends AbstractFlowIT {
 		assertThat(TELEGRAM.sent().get(0).text()).contains("Commit 1").contains("tentar novamente");
 	}
 
-	// recovery once GitHub is back
-
 	@Test
 	void shouldMarkFailedRecordAsSuccessOnceGitHubIsBack() {
 		reprocessOnceGitHubIsBack();
 
-		assertThat(only().getStatus()).isEqualTo(CommitStatus.SUCCESS);
+		assertThat(onlyRecord().getStatus()).isEqualTo(CommitStatus.SUCCESS);
 	}
 
 	@Test
@@ -140,10 +133,8 @@ class RecoveryFlowIT extends AbstractFlowIT {
 		recovery.recover();
 		awaitQueuedWork();
 
-		assertThat(only().getStatus()).isEqualTo(CommitStatus.FAILED);
+		assertThat(onlyRecord().getStatus()).isEqualTo(CommitStatus.FAILED);
 	}
-
-	// giving up
 
 	@Test
 	void shouldNotifyOnlyOnTheFirstAndTheFinalFailure() {
@@ -163,20 +154,18 @@ class RecoveryFlowIT extends AbstractFlowIT {
 	void shouldNotTryAgainAfterMaxAttempts() {
 		failUntilAttemptsAreExhausted();
 
-		runRecovery();
+		advanceTimeAndRunRecovery();
 		awaitQueuedWork();
 
-		assertThat(only().getAttemptCount()).isEqualTo(MAX_ATTEMPTS);
+		assertThat(onlyRecord().getAttemptCount()).isEqualTo(MAX_ATTEMPTS);
 	}
 
 	@Test
 	void shouldLeaveExhaustedRecordAsFailed() {
 		failUntilAttemptsAreExhausted();
 
-		assertThat(only().getStatus()).isEqualTo(CommitStatus.FAILED);
+		assertThat(onlyRecord().getStatus()).isEqualTo(CommitStatus.FAILED);
 	}
-
-	// idempotency
 
 	@Test
 	void shouldNotAppendTheLineTwiceWhenItIsAlreadyInTheFile() {

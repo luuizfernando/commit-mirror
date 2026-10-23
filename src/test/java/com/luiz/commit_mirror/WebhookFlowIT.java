@@ -28,8 +28,6 @@ class WebhookFlowIT extends AbstractFlowIT {
 		return postUpdate(SECRET, 1L, ALLOWED_USER, "/commit");
 	}
 
-	// authentication
-
 	@Test
 	void shouldReturn403WhenSecretIsWrong() {
 		assertThat(postWithWrongSecret()).isEqualTo(403);
@@ -56,8 +54,6 @@ class WebhookFlowIT extends AbstractFlowIT {
 		assertThat(GITHUB.commits()).isEmpty();
 	}
 
-	// allowlist
-
 	@Test
 	void shouldReturn200ToUserOutsideAllowlist() {
 		assertThat(postFromUserOutsideAllowlist()).isEqualTo(200);
@@ -76,8 +72,6 @@ class WebhookFlowIT extends AbstractFlowIT {
 
 		assertThat(TELEGRAM.sent()).isEmpty();
 	}
-
-	// input validation
 
 	@Test
 	void shouldReturn200WhenCommitHasNoMessage() {
@@ -118,8 +112,6 @@ class WebhookFlowIT extends AbstractFlowIT {
 
 		assertThat(TELEGRAM.sent()).containsExactly(new Sent(CHAT_ID, "Comando desconhecido: /nope"));
 	}
-
-	// privacy: the typed text never reaches the logs, whatever path the update takes
 
 	@Test
 	void shouldNeverLogTypedTextOnSuccessfulCommit(CapturedOutput output) {

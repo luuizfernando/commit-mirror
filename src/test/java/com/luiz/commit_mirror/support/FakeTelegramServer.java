@@ -11,7 +11,6 @@ import java.util.regex.Pattern;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
-/** Stand-in for the Telegram Bot API {@code sendMessage}: records what the bot would have sent. Dependency free. */
 public final class FakeTelegramServer {
 
 	public record Sent(long chatId, String text) {

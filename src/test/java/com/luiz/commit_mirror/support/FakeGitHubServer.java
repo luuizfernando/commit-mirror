@@ -16,11 +16,6 @@ import java.util.regex.Pattern;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
-/**
- * Minimal stateful stand-in for the GitHub Contents API (GET/PUT of a file). It enforces the {@code sha} contract
- * like the real API does (409 when stale), records every commit, and can be switched to fail on demand. Dependency
- * free on purpose, so it also runs standalone for manual tests.
- */
 public final class FakeGitHubServer {
 
 	public record Commit(String path, String message, String authorName, String authorEmail, String authorDate,
@@ -66,7 +61,6 @@ public final class FakeGitHubServer {
 		failWithStatus = 0;
 	}
 
-	/** Every request answers with this status until {@link #recover()} (0 disables). */
 	public void failWith(int status) {
 		this.failWithStatus = status;
 	}

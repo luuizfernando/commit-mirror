@@ -18,7 +18,6 @@ import com.luiz.commit_mirror.domain.CommitLog;
 import com.luiz.commit_mirror.domain.CommitStatus;
 import com.luiz.commit_mirror.repository.CommitLogRepository;
 
-/** Re-queues stale PENDING records (process died mid-flight) and FAILED ones that still have attempts left. */
 @Service
 public class PendingRecoveryService {
 

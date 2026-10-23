@@ -43,27 +43,26 @@ class GitHubLogWriterTest {
 	}
 
 	private void gatewayThrowsAlways(RuntimeException exception) {
-		when(gateway.appendLine(anyString(), anyString(), anyString(), any())).thenThrow(exception);
+		when(gateway.appendLineIfAbsent(anyString(), anyString(), anyString(), any())).thenThrow(exception);
 	}
 
 	private void gatewayFailsTwiceWithConflictThenReturnsSha() {
-		when(gateway.appendLine(anyString(), anyString(), anyString(), any()))
+		when(gateway.appendLineIfAbsent(anyString(), anyString(), anyString(), any()))
 			.thenThrow(new GitHubConflictException("409"))
 			.thenThrow(new GitHubConflictException("409"))
 			.thenReturn("sha");
 	}
 
 	private void gatewayFailsOnceWithServerErrorThenReturnsSha() {
-		when(gateway.appendLine(anyString(), anyString(), anyString(), any()))
+		when(gateway.appendLineIfAbsent(anyString(), anyString(), anyString(), any()))
 			.thenThrow(new GitHubTransientException("503"))
 			.thenReturn("sha");
 	}
 
 	private void verifyGatewayCalled(int times) {
-		verify(gateway, times(times)).appendLine(anyString(), anyString(), anyString(), any());
+		verify(gateway, times(times)).appendLineIfAbsent(anyString(), anyString(), anyString(), any());
 	}
 
-	/** Two appends exhaust the retries with transient failures: 2 x 3 calls reach the minimum of 5 at 100%. */
 	private void tripCircuitWithServerErrors() {
 		gatewayThrowsAlways(new GitHubTransientException("503"));
 		catchThrowable(this::append);
@@ -75,16 +74,12 @@ class GitHubLogWriterTest {
 		circuitBreaker.transitionToHalfOpenState();
 	}
 
-	// happy path
-
 	@Test
 	void shouldReturnTheShaFromTheGateway() {
-		when(gateway.appendLine("logs/2026-10.md", "Commit 1", "Commit 1", WHEN)).thenReturn("sha");
+		when(gateway.appendLineIfAbsent("logs/2026-10.md", "Commit 1", "Commit 1", WHEN)).thenReturn("sha");
 
 		assertThat(append()).isEqualTo("sha");
 	}
-
-	// retry
 
 	@Test
 	void shouldReturnShaWhenConflictsAreFollowedBySuccess() {
@@ -157,8 +152,6 @@ class GitHubLogWriterTest {
 		assertThatThrownBy(this::append).isInstanceOf(GitHubConflictException.class);
 	}
 
-	// circuit breaker
-
 	@Test
 	void shouldOpenCircuitAfterFailureRateThreshold() {
 		tripCircuitWithServerErrors();
@@ -207,7 +200,7 @@ class GitHubLogWriterTest {
 	@Test
 	void shouldCloseCircuitAfterSuccessfulHalfOpenCalls() {
 		moveCircuitToHalfOpen();
-		when(gateway.appendLine(anyString(), anyString(), anyString(), any())).thenReturn("sha");
+		when(gateway.appendLineIfAbsent(anyString(), anyString(), anyString(), any())).thenReturn("sha");
 
 		for (int i = 0; i < resilience.circuitHalfOpenCalls(); i++) {
 			append();

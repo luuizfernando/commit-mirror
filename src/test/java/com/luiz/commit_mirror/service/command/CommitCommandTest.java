@@ -97,8 +97,6 @@ class CommitCommandTest {
 		assertThat(command.name()).isEqualTo("commit");
 	}
 
-	// input validation
-
 	@ParameterizedTest
 	@ValueSource(strings = { "", "   " })
 	void shouldReplyUsageWhenMessageIsEmptyOrBlank(String arguments) {
@@ -121,8 +119,6 @@ class CommitCommandTest {
 
 		assertThat(logs.hasEventAt(Level.WARN)).isTrue();
 	}
-
-	// happy path
 
 	@Test
 	void shouldRegisterTheRecordBeforeSubmittingProcessing() {
@@ -172,8 +168,6 @@ class CommitCommandTest {
 		assertThat(logs.hasEventAt(Level.INFO)).isTrue();
 	}
 
-	// duplicates
-
 	@Test
 	void shouldNotSubmitProcessingForDuplicateUpdate() {
 		updateIsDuplicate();
@@ -200,8 +194,6 @@ class CommitCommandTest {
 
 		assertThat(logs.hasEventAt(Level.WARN)).isTrue();
 	}
-
-	// privacy
 
 	@Test
 	void shouldNeverLogTypedTextWhenRecordIsRegistered() {

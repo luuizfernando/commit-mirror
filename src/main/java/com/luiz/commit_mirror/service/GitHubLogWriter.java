@@ -12,7 +12,6 @@ import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.retry.Retry;
 
-/** Runs the GitHub read-modify-write as {@code Retry(CircuitBreaker(GET + PUT))}. */
 @Service
 public class GitHubLogWriter {
 
@@ -29,7 +28,7 @@ public class GitHubLogWriter {
 	}
 
 	public String append(String path, String line, String commitMessage, Instant timestamp) {
-		Supplier<String> call = () -> gateway.appendLine(path, line, commitMessage, timestamp);
+		Supplier<String> call = () -> gateway.appendLineIfAbsent(path, line, commitMessage, timestamp);
 		Supplier<String> resilient = Retry.decorateSupplier(retry, CircuitBreaker.decorateSupplier(circuitBreaker, call));
 		try {
 			return resilient.get();

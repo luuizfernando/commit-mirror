@@ -29,28 +29,23 @@ class AppPropertiesValidationTest {
 		return loaded[0];
 	}
 
-	/** All required properties, with {@code key} left blank. */
-	private ApplicationContextRunner withBlank(String key) {
+	private ApplicationContextRunner withRequiredButBlank(String key) {
 		String[] values = Arrays.stream(REQUIRED).map(entry -> entry.startsWith(key + "=") ? key + "=" : entry)
 			.toArray(String[]::new);
 		return runner.withPropertyValues(values);
 	}
-
-	// happy path
 
 	@Test
 	void shouldStartWhenAllRequiredPropertiesAreSet() {
 		withRequired().run(context -> assertThat(context).hasNotFailed());
 	}
 
-	// required secrets and identities
-
 	@ParameterizedTest
 	@ValueSource(strings = { "app.telegram.bot-token", "app.telegram.webhook-secret", "app.telegram.allowed-user-id",
 			"app.github.token", "app.github.owner", "app.github.repo", "app.github.author-name",
 			"app.github.author-email" })
 	void shouldFailStartupWhenRequiredPropertyIsBlank(String key) {
-		withBlank(key).run(context -> assertThat(context).hasFailed());
+		withRequiredButBlank(key).run(context -> assertThat(context).hasFailed());
 	}
 
 	@Test
@@ -64,8 +59,6 @@ class AppPropertiesValidationTest {
 		withRequired().withPropertyValues("app.resilience.retry-max-attempts=-1")
 			.run(context -> assertThat(context).hasFailed());
 	}
-
-	// defaults
 
 	@Test
 	void shouldDefaultTelegramBaseUrlToTheOfficialApi() {

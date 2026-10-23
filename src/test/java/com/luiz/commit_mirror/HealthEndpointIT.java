@@ -6,7 +6,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.client.RestClient;
 
-/** Shares the flow context on purpose: one Spring context and one Postgres container for every IT that needs them. */
 class HealthEndpointIT extends AbstractFlowIT {
 
 	@Value("${local.management.port}")

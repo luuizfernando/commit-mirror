@@ -32,11 +32,6 @@ import com.luiz.commit_mirror.support.MutableClock;
 
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 
-/**
- * Whole application against a real Postgres and stateful fakes of GitHub and Telegram. All subclasses share one
- * Spring context (and one container), so state is reset before every test. Time is a fixed {@link MutableClock}:
- * it only moves when a test advances it, and it is rewound before every test.
- */
 @Import(TestcontainersConfiguration.class)
 @ActiveProfiles("test")
 @ExtendWith(OutputCaptureExtension.class)
@@ -49,12 +44,11 @@ public abstract class AbstractFlowIT {
 
 	protected static final long CHAT_ID = 100L;
 
-	/** 12:00 in America/Sao_Paulo, far from any day or month boundary. */
-	protected static final Instant NOW = Instant.parse("2026-10-21T15:00:00Z");
+	protected static final Instant NOON_IN_SAO_PAULO = Instant.parse("2026-10-21T15:00:00Z");
 
 	protected static final String MONTH_FILE = "logs/2026-10.md";
 
-	protected static final MutableClock CLOCK = new MutableClock(NOW);
+	protected static final MutableClock CLOCK = new MutableClock(NOON_IN_SAO_PAULO);
 
 	protected static final FakeGitHubServer GITHUB = new FakeGitHubServer().start(0);
 
@@ -127,13 +121,12 @@ public abstract class AbstractFlowIT {
 		await().atMost(timeout()).untilAsserted(() -> assertThat(TELEGRAM.sent()).hasSize(count));
 	}
 
-	/** The single record the test created. */
-	protected CommitLog only() {
+	protected CommitLog onlyRecord() {
 		return repository.findAll().get(0);
 	}
 
 	protected void awaitOnlyRecordStatus(CommitStatus status) {
-		await().atMost(timeout()).untilAsserted(() -> assertThat(only().getStatus()).isEqualTo(status));
+		await().atMost(timeout()).untilAsserted(() -> assertThat(onlyRecord().getStatus()).isEqualTo(status));
 	}
 
 }

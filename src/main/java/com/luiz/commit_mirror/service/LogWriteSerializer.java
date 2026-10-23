@@ -10,10 +10,6 @@ import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PreDestroy;
 
-/**
- * Single-worker queue: every GitHub read-modify-write of the log file runs here, one at a time and in submission
- * order. It also makes the webhook asynchronous, since submitting returns immediately.
- */
 @Service
 public class LogWriteSerializer {
 

@@ -30,8 +30,6 @@ class CommitLogTest {
 		return log;
 	}
 
-	// creation
-
 	@Test
 	void shouldStartAsPending() {
 		assertThat(newLog().getStatus()).isEqualTo(CommitStatus.PENDING);
@@ -62,8 +60,6 @@ class CommitLogTest {
 		assertThat(newLog().getUpdatedAt()).isEqualTo(CREATED);
 	}
 
-	// success
-
 	@Test
 	void shouldMoveToSuccessWhenMarkedAsSuccess() {
 		CommitLog log = newLog();
@@ -90,8 +86,6 @@ class CommitLogTest {
 
 		assertThat(log.getUpdatedAt()).isEqualTo(LATER);
 	}
-
-	// failure
 
 	@Test
 	void shouldMoveToFailedWhenMarkedAsFailed() {
@@ -130,8 +124,6 @@ class CommitLogTest {
 		assertThat(log.getAttemptCount()).isEqualTo(2);
 	}
 
-	// reopen
-
 	@Test
 	void shouldMoveFailedRecordBackToPendingWhenReopened() {
 		CommitLog log = failedLog();
@@ -158,8 +150,6 @@ class CommitLogTest {
 
 		assertThat(log.getUpdatedAt()).isEqualTo(LATER);
 	}
-
-	// invalid transitions
 
 	@Test
 	void shouldRejectSuccessWhenAlreadySucceeded() {

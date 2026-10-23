@@ -51,13 +51,10 @@ class UpdateDispatcherTest {
 		return update(new TelegramUser(userId), new TelegramChat(CHAT_ID), text);
 	}
 
-	/** An ignored update runs no command and sends no reply. */
 	private void verifyIgnoredSilently() {
 		verify(commitCommand, never()).execute(any());
 		verifyNoInteractions(telegramClient);
 	}
-
-	// happy path
 
 	@Test
 	void shouldExecuteResolvedCommandWithContext() {
@@ -65,8 +62,6 @@ class UpdateDispatcherTest {
 
 		verify(commitCommand).execute(new CommandContext(UPDATE_ID, CHAT_ID, ALLOWED_USER, "hello world"));
 	}
-
-	// ignored updates
 
 	@Test
 	void shouldIgnoreUpdateWithoutMessage() {
@@ -123,8 +118,6 @@ class UpdateDispatcherTest {
 
 		verify(commitCommand, never()).execute(any());
 	}
-
-	// unknown command
 
 	@Test
 	void shouldReplyWhenCommandIsUnknown() {

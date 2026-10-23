@@ -22,7 +22,6 @@ class CommitDateResolverTest {
 
 	@Test
 	void shouldKeepPreviousLocalDateWhenUtcHasAlreadyTurnedTheDay() {
-		// 23:30 in America/Sao_Paulo is already 02:30Z of the next day
 		assertThat(saoPauloResolver.resolve(Instant.parse("2026-10-22T02:30:00Z"))).isEqualTo(LocalDate.of(2026, 10, 21));
 	}
 

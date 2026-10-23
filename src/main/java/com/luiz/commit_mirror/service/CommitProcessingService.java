@@ -16,10 +16,6 @@ import com.luiz.commit_mirror.integration.TelegramApiException;
 import com.luiz.commit_mirror.integration.TelegramClient;
 import com.luiz.commit_mirror.repository.CommitLogRepository;
 
-/**
- * Sends a registered commit to GitHub and records the outcome. Safe to call again for the same record: a finished
- * one is skipped, and a failed one is retried keeping its sequence number.
- */
 @Service
 public class CommitProcessingService {
 

@@ -32,11 +32,11 @@ public class RestClientGitHubContentsGateway implements GitHubContentsGateway {
 	}
 
 	@Override
-	public String appendLine(String path, String line, String commitMessage, Instant timestamp) {
+	public String appendLineIfAbsent(String path, String line, String commitMessage, Instant timestamp) {
 		try {
 			GitHubFileContent existing = fetch(path);
 			String current = existing == null ? "" : decode(existing.content());
-			if (containsLine(current, line)) {
+			if (containsWholeLine(current, line)) {
 				return null;
 			}
 			String updated = current + (current.isEmpty() || current.endsWith("\n") ? "" : "\n") + line + "\n";
@@ -100,8 +100,7 @@ public class RestClientGitHubContentsGateway implements GitHubContentsGateway {
 		return new String(Base64.getMimeDecoder().decode(base64Content), StandardCharsets.UTF_8);
 	}
 
-	/** Whole-line comparison, so "Commit 1" never matches "Commit 10". */
-	private static boolean containsLine(String content, String line) {
+	private static boolean containsWholeLine(String content, String line) {
 		return content.lines().anyMatch(existing -> existing.strip().equals(line));
 	}
 

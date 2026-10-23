@@ -58,8 +58,6 @@ class RestClientTelegramClientIT {
 		client.sendMessage(100L, "hello");
 	}
 
-	// happy path
-
 	@Test
 	void shouldPostSendMessageWithChatIdAndText() {
 		stubSendMessageStatus(200);
@@ -69,8 +67,6 @@ class RestClientTelegramClientIT {
 		server.verify(postRequestedFor(urlEqualTo(SEND_MESSAGE_PATH))
 			.withRequestBody(equalToJson("{\"chat_id\":100,\"text\":\"hello\"}")));
 	}
-
-	// error handling
 
 	@Test
 	void shouldThrowTelegramApiExceptionOnServerError() {
@@ -92,8 +88,6 @@ class RestClientTelegramClientIT {
 
 		assertThatThrownBy(this::sendHello).isInstanceOf(TelegramApiException.class);
 	}
-
-	// secret protection
 
 	@Test
 	void shouldNotLeakBotTokenWhenTelegramReturnsAnError() {

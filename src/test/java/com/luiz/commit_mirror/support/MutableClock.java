@@ -6,7 +6,6 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.concurrent.atomic.AtomicReference;
 
-/** A fixed clock that only moves when a test calls {@link #advance(Duration)}; {@link #reset()} rewinds it. */
 public final class MutableClock extends Clock {
 
 	private final Instant initial;

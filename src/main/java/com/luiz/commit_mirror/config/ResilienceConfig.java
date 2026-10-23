@@ -14,7 +14,6 @@ import io.github.resilience4j.core.IntervalFunction;
 import io.github.resilience4j.retry.Retry;
 import io.github.resilience4j.retry.RetryConfig;
 
-/** Resilience4j core modules configured programmatically: no AOP and no Boot 3 starter. */
 @Configuration(proxyBeanMethods = false)
 @EnableScheduling
 public class ResilienceConfig {
@@ -31,7 +30,6 @@ public class ResilienceConfig {
 		return circuitBreaker(properties.resilience());
 	}
 
-	/** Retries conflicts (the whole GET+PUT is repeated with a fresh sha) and transient failures, with jitter. */
 	public static Retry retry(AppProperties.Resilience settings) {
 		RetryConfig config = RetryConfig.custom()
 			.maxAttempts(settings.retryMaxAttempts())
@@ -41,7 +39,6 @@ public class ResilienceConfig {
 		return Retry.of(NAME, config);
 	}
 
-	/** Only transient failures count: a 409 or a rejected request says nothing about GitHub being down. */
 	public static CircuitBreaker circuitBreaker(AppProperties.Resilience settings) {
 		CircuitBreakerConfig config = CircuitBreakerConfig.custom()
 			.slidingWindowType(CircuitBreakerConfig.SlidingWindowType.COUNT_BASED)

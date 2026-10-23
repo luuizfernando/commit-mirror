@@ -8,10 +8,6 @@ import com.luiz.commit_mirror.service.WebhookSecretValidator;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
-/**
- * Checks the webhook secret before the body is read, so an unauthenticated request always gets 403, even when its
- * body is malformed.
- */
 @Component
 public class WebhookSecretInterceptor implements HandlerInterceptor {
 

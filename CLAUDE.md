@@ -32,6 +32,10 @@ Integration tests use Testcontainers (real Postgres), so Docker must be running.
 - Resilience4j runs as core modules configured in `config/ResilienceConfig`; GitHub writes are serialized through `LogWriteSerializer` (single worker) and unfinished commits are re-queued by `PendingRecoveryService`.
 - Integration tests extend `AbstractFlowIT` (real Postgres + stateful `FakeGitHubServer`/`FakeTelegramServer` in `src/test/.../support`, also runnable standalone for manual tests).
 
+## Comments
+
+Avoid comments as much as possible, in production and test code alike (no Javadoc on classes, methods or fields, no section markers in test classes). A comment that explains code means the code must be refactored: extract a method, introduce a variable or constant, or rename until the code says it on its own. A method name must state exactly what the method does, so a comment explaining a method is useless.
+
 ## Testing
 
 ### Non-negotiable rule

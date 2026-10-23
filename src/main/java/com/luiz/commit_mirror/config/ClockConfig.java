@@ -17,7 +17,6 @@ public class ClockConfig {
 		return Clock.systemUTC();
 	}
 
-	/** Each sequence allocation attempt runs in its own transaction, because a collision poisons the current one. */
 	@Bean
 	TransactionOperations newTransaction(PlatformTransactionManager transactionManager) {
 		TransactionTemplate template = new TransactionTemplate(transactionManager);

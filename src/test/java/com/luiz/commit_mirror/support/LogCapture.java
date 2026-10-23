@@ -9,10 +9,6 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 
-/**
- * Captures the events of one class logger at DEBUG and up. {@link #detach()} restores the logger exactly as it was,
- * so no test leaks logging state into another.
- */
 public final class LogCapture {
 
 	private final Logger logger;
@@ -49,7 +45,6 @@ public final class LogCapture {
 					&& message.equals(event.getThrowableProxy().getMessage()));
 	}
 
-	/** Looks at the formatted message and at every raw argument, so a value passed but not rendered still counts. */
 	public boolean anyEventContains(String text) {
 		return appender.list.stream().anyMatch(event -> event.getFormattedMessage().contains(text)
 				|| (event.getArgumentArray() != null

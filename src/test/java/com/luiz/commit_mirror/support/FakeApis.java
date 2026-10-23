@@ -1,9 +1,5 @@
 package com.luiz.commit_mirror.support;
 
-/**
- * Runs both fakes for manual tests with the real image: GitHub on port 9101 and Telegram on 9102.
- * See docs/TESTE-LOCAL.md.
- */
 public final class FakeApis {
 
 	private FakeApis() {

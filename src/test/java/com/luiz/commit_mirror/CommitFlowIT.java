@@ -49,8 +49,6 @@ class CommitFlowIT extends AbstractFlowIT {
 		}
 	}
 
-	// first commit
-
 	@Test
 	void shouldAcceptCommitWebhookWith200() {
 		assertThat(postCommit(1L, TYPED_TEXT)).isEqualTo(200);
@@ -76,8 +74,6 @@ class CommitFlowIT extends AbstractFlowIT {
 			.untilAsserted(() -> assertThat(TELEGRAM.sent()).containsExactly(new Sent(CHAT_ID, "Commit 1 registrado.")));
 	}
 
-	// second commit
-
 	@Test
 	void shouldAppendTheSecondLineToTheSameMonthFile() {
 		commitTwice();
@@ -92,14 +88,12 @@ class CommitFlowIT extends AbstractFlowIT {
 		assertThat(GITHUB.commits()).extracting(Commit::message).containsExactly("Commit 1", "Commit 2");
 	}
 
-	// stored outcome and commit metadata
-
 	@Test
 	void shouldStoreSuccessWithTheGitHubSha() {
 		postCommit(1L, TYPED_TEXT);
 		awaitOnlyRecordStatus(CommitStatus.SUCCESS);
 
-		assertThat(only().getGithubCommitSha()).isNotBlank();
+		assertThat(onlyRecord().getGithubCommitSha()).isNotBlank();
 	}
 
 	@Test
@@ -112,12 +106,12 @@ class CommitFlowIT extends AbstractFlowIT {
 
 	@Test
 	void shouldDateTheAuthorWithTheCreationInstant() {
-		assertThat(firstCommitToGitHub().authorDate()).isEqualTo(NOW.toString());
+		assertThat(firstCommitToGitHub().authorDate()).isEqualTo(NOON_IN_SAO_PAULO.toString());
 	}
 
 	@Test
 	void shouldDateTheCommitterWithTheCreationInstant() {
-		assertThat(firstCommitToGitHub().committerDate()).isEqualTo(NOW.toString());
+		assertThat(firstCommitToGitHub().committerDate()).isEqualTo(NOON_IN_SAO_PAULO.toString());
 	}
 
 	@Test
@@ -129,8 +123,6 @@ class CommitFlowIT extends AbstractFlowIT {
 	void shouldAuthenticateWithTheConfiguredToken() {
 		assertThat(firstCommitToGitHub().authorization()).isEqualTo("Bearer test-github-token");
 	}
-
-	// privacy
 
 	@Test
 	void shouldNeverSendTypedTextToGitHub() {
@@ -148,10 +140,8 @@ class CommitFlowIT extends AbstractFlowIT {
 	void shouldKeepTypedTextOnlyInTheDatabase() {
 		firstCommitToGitHub();
 
-		assertThat(only().getMessage()).isEqualTo(TYPED_TEXT);
+		assertThat(onlyRecord().getMessage()).isEqualTo(TYPED_TEXT);
 	}
-
-	// redelivered updates
 
 	@Test
 	void shouldAcceptRedeliveredUpdateWith200() {
@@ -177,8 +167,6 @@ class CommitFlowIT extends AbstractFlowIT {
 
 		assertThat(GITHUB.commits()).hasSize(1);
 	}
-
-	// concurrency
 
 	@Test
 	void shouldWriteEveryConcurrentCommitExactlyOnceToTheFile() {

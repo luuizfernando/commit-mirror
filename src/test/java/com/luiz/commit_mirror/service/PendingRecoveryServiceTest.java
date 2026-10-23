@@ -78,8 +78,6 @@ class PendingRecoveryServiceTest {
 			.thenReturn(List.of(logs));
 	}
 
-	// happy path
-
 	@Test
 	void shouldReprocessStalePendingOnStartup() {
 		serializerRunsTasksInline();
@@ -133,8 +131,6 @@ class PendingRecoveryServiceTest {
 		verify(processing, never()).process(1L);
 	}
 
-	// query thresholds
-
 	@Test
 	void shouldOnlyLookForPendingCreatedBeforeTheMinimumAge() {
 		enabledService.recover();
@@ -162,8 +158,6 @@ class PendingRecoveryServiceTest {
 		verify(repository).findByStatusAndAttemptCountLessThanAndUpdatedAtBeforeOrderBySequenceNumber(
 				eq(CommitStatus.FAILED), eq(MAX_ATTEMPTS), any());
 	}
-
-	// edge cases
 
 	@Test
 	void shouldNotQueueAnythingWhenThereAreNoCandidates() {

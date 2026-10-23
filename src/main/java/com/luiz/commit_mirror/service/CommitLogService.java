@@ -39,10 +39,6 @@ public class CommitLogService {
 		this.newTransaction = newTransaction;
 	}
 
-	/**
-	 * Records a new PENDING commit with the next global sequence number.
-	 * @return the record, or empty when this Telegram update was already registered
-	 */
 	public Optional<CommitLog> register(long updateId, long chatId, String message) {
 		for (int attempt = 1; attempt <= maxAttempts; attempt++) {
 			try {
