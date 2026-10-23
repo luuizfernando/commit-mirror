@@ -1,11 +1,8 @@
 name: pipeline
 
-# Environments by branch: dev (CI only, local development), homolog (deploy to the homolog stack),
-# main (release + deploy to production). Changes are promoted dev -> homolog -> main through PRs.
-# Only main is tagged and released; homolog deploys release candidates of the next version.
 on:
   push:
-    branches: [main, homolog, dev]
+    branches: [main]
     # The bot commits only under commit-logs/**; pure log commits must not trigger the pipeline.
     paths-ignore:
       - 'commit-logs/**'
@@ -13,7 +10,7 @@ on:
       - '**/*.md'
       - 'LICENSE'
   pull_request:
-    branches: [main, homolog, dev]
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -71,16 +68,11 @@ jobs:
           base="$(echo "$revision" | cut -d. -f1,2)"
           last="$(git tag -l "v${base}.*" | sed "s/^v${base}\.//" | sort -n | tail -n1)"
           next=$(( ${last:--1} + 1 ))
-          version="${base}.${next}"
-          # Homolog builds are release candidates of the next production version and are never tagged.
-          if [[ "$GITHUB_REF_NAME" != "main" ]]; then
-            version="${version}-rc.${GITHUB_RUN_NUMBER}"
-          fi
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "version=${base}.${next}" >> "$GITHUB_OUTPUT"
 
   publish:
     needs: [actionlint, build-test, version]
-    if: github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'homolog')
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.version.outputs.version }}
@@ -119,7 +111,6 @@ jobs:
 
   release:
     needs: [publish, version]
-    if: github.ref_name == 'main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -139,13 +130,8 @@ jobs:
           gh release create "v${VERSION}" --target "$GITHUB_SHA" --title "v${VERSION}" --notes-file notes.md
 
   deploy:
-    needs: [publish, release, version]
-    # release is skipped on homolog, so only a failed or cancelled run blocks the deploy.
-    if: ${{ !cancelled() && needs.publish.result == 'success' && needs.release.result != 'failure' }}
+    needs: [release, version]
     runs-on: ubuntu-latest
-    # Environment secrets override the repository-level ones: homolog defines its own VPS_SSH_KEY,
-    # whose forced command runs the deploy.sh of the homolog stack.
-    environment: ${{ github.ref_name == 'main' && 'production' || 'homolog' }}
     permissions:
       contents: write
     env:
@@ -168,7 +154,7 @@ jobs:
             -o BatchMode=yes -o StrictHostKeyChecking=yes \
             "$VPS_USER@$VPS_HOST" "$VERSION"
       - name: Flag the release when the deploy fails
-        if: failure() && github.ref_name == 'main'
+        if: failure()
         run: |
           gh release edit "v${VERSION}" --repo "$GITHUB_REPOSITORY" --prerelease \
             --notes "Deploy failed and was rolled back. This version is not live."

@@ -65,48 +65,6 @@ Requer **JDK 21** no `JAVA_HOME` e Docker em execução (os testes de integraç�
 
 O pipeline (`.github/workflows/pipeline.yml`) executa: lint → `./mvnw verify` → cálculo de versão → build da imagem Docker (uma vez) → smoke test → push para o Docker Hub → tag/release → deploy via SSH. A VPS não clona o repositório; ela guarda apenas `docker-compose.yaml`, `.env` e `deploy.sh`, e o pipeline só troca a tag da imagem.
 
-## Ambientes
-
-Cada ambiente corresponde a uma branch. As mudanças são promovidas por PR na ordem `dev` → `homolog` → `main`.
-
-| Ambiente | Branch | Pipeline | Versão / imagem | Onde roda |
-| --- | --- | --- | --- | --- |
-| Desenvolvimento | `dev` | lint + testes, sem deploy | — | local |
-| Homologação | `homolog` | lint + testes + imagem + deploy | `X.Y.Z-rc.N` (sem tag/release) | VPS, `/projects/commit-mirror-homolog` |
-| Produção | `main` | lint + testes + imagem + release + deploy | `X.Y.Z` (tag `vX.Y.Z` e release) | VPS, `/projects/commit-mirror` |
-
-A versão de homolog é um release candidate da próxima versão de produção (`0.1.3-rc.42`, onde `42` é o número da execução do pipeline). O Dependabot abre os PRs contra `dev`.
-
-### Isolamento entre homolog e produção
-
-Os dois stacks rodam na mesma VPS e não compartilham nada além da máquina:
-
-| Recurso | Produção | Homologação |
-| --- | --- | --- |
-| Diretório | `/projects/commit-mirror` | `/projects/commit-mirror-homolog` |
-| `COMPOSE_PROJECT_NAME` | `commit-mirror` | `commit-mirror-homolog` (containers e volume do Postgres separados) |
-| `APP_HOST_PORT` | `8080` | `8090` |
-| Domínio | `bot.luuizfernando.tech` | `bot-homolog.luuizfernando.tech` |
-| Bot do Telegram | bot de produção | outro bot (o Telegram aceita um webhook por bot) |
-| Repositório de log | este repositório | um repositório separado, para que commits de teste não entrem no log de produção |
-| Chave SSH de deploy | `VPS_SSH_KEY` do repositório | `VPS_SSH_KEY` do environment `homolog` |
-
-### Configurar homologação (uma vez)
-
-1. **DNS e nginx**: crie o registro A de `bot-homolog.luuizfernando.tech`, instale `nginx/commit-mirror-homolog.conf` em `/etc/nginx/conf.d/` (arquivo separado, para não sobrescrever o TLS que o certbot gravou no de produção) e rode `certbot --nginx -d bot-homolog.luuizfernando.tech`.
-2. **Stack na VPS**: crie `/projects/commit-mirror-homolog` com `docker-compose.yaml`, `deploy.sh` (executável) e um `.env` próprio (`APP_HOST_PORT=8090`, `COMPOSE_PROJECT_NAME=commit-mirror-homolog`, banco, bot e repositório de log de homolog). O `deploy.sh` usa o próprio diretório como `APP_DIR`.
-3. **Chave SSH**: gere um par de chaves só para homolog e adicione a pública no `authorized_keys` do usuário de deploy, com o comando forçado do stack de homolog:
-   ```
-   command="/projects/commit-mirror-homolog/deploy.sh",no-pty,no-port-forwarding,no-agent-forwarding,no-X11-forwarding ssh-ed25519 AAAA... deploy-homolog
-   ```
-   Não reaproveite a chave de produção: o comando forçado dela faria o deploy do release candidate em produção.
-4. **GitHub**: em *Settings → Environments*, crie `homolog` com o secret `VPS_SSH_KEY` (a chave privada do passo 3). Os demais (`VPS_HOST`, `VPS_USER`, `VPS_PORT`, `VPS_KNOWN_HOSTS`, Docker Hub) continuam no nível do repositório. Crie também `production` (pode ficar sem secrets, eles vêm do repositório) e, se quiser, adicione regras de proteção, como aprovação manual e restrição à branch `main`.
-5. **Webhook**: `TELEGRAM_BOT_TOKEN=... TELEGRAM_WEBHOOK_SECRET=... deploy/setup-webhook.sh set https://bot-homolog.luuizfernando.tech/telegram/webhook`, com o token e o secret do bot de homolog.
-
-### Desenvolvimento local
-
-`dev` não tem deploy. Para rodar a aplicação localmente com Postgres via Testcontainers, execute `TestCommitMirrorApplication` (em `src/test`). Os fakes `FakeGitHubServer` e `FakeTelegramServer` permitem testar o fluxo sem tocar nas APIs reais.
-
 ## Estrutura
 
 ```
