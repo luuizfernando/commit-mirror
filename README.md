@@ -81,19 +81,6 @@ ADR/              # decisões de arquitetura
 commit-logs/      # logs mensais gerados pelo serviço
 ```
 
-## Implementações futuras
-
-### API genérica e multiusuário
-
-Hoje o serviço atende um único dono, definido por variáveis de ambiente. A meta é torná-lo genérico o suficiente para que outros devs usem a mesma API, bastando um pequeno login via bot do Telegram:
-
-- **Onboarding pelo bot**: um comando como `/start` ou `/login` identifica o usuário pelo ID do Telegram e inicia o cadastro, substituindo o `TELEGRAM_ALLOWED_USER_ID` fixo.
-- **Repositório e credenciais por usuário**: cada dev informa o repositório de destino e autoriza o acesso ao GitHub (OAuth ou GitHub App, em vez de um PAT global), com tokens armazenados criptografados.
-- **Autoria por usuário**: nome e e-mail de autor configuráveis por pessoa, garantindo que os commits contem no gráfico de cada um.
-- **Isolamento de dados**: contador `sequence_number` e logs por usuário, em vez de um contador global.
-- **Serialização de escrita por repositório**: trocar o worker único global por uma fila por repositório.
-- **Limites e proteção**: rate limit por usuário e validação do webhook mantida para todos.
-
 ## Licença
 
 [MIT](LICENSE)
