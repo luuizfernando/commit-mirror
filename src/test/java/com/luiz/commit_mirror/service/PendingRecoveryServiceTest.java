@@ -6,6 +6,8 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -33,23 +35,26 @@ class PendingRecoveryServiceTest {
 
 	private static final Instant NOW = Instant.parse("2026-10-21T16:00:00Z");
 
+	private static final Duration MIN_AGE = Duration.ofMinutes(5);
+
+	private static final int MAX_ATTEMPTS = 3;
+
 	private final CommitLogRepository repository = mock(CommitLogRepository.class);
 
 	private final LogWriteSerializer serializer = mock(LogWriteSerializer.class);
 
 	private final CommitProcessingService processing = mock(CommitProcessingService.class);
 
-	private final Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+	private final PendingRecoveryService enabledService = service(true);
 
 	private PendingRecoveryService service(boolean enabled) {
-		AppProperties base = TestProperties.defaults();
-		AppProperties.Recovery recovery = new AppProperties.Recovery(enabled, Duration.ofSeconds(60),
-				Duration.ofMinutes(5), 3);
-		return new PendingRecoveryService(repository, serializer, processing, clock,
-				new AppProperties(base.telegram(), base.github(), base.timeZone(), recovery, base.resilience()));
+		AppProperties.Recovery recovery = new AppProperties.Recovery(enabled, Duration.ofSeconds(60), MIN_AGE,
+				MAX_ATTEMPTS);
+		return new PendingRecoveryService(repository, serializer, processing, Clock.fixed(NOW, ZoneOffset.UTC),
+				TestProperties.withRecovery(recovery));
 	}
 
-	private CommitLog log(long id, long sequence) {
+	private static CommitLog log(long id, long sequence) {
 		CommitLog log = CommitLog.create(id, 100L, "x", LocalDate.of(2026, 10, 21), sequence, NOW);
 		ReflectionTestUtils.setField(log, "id", id);
 		return log;
@@ -62,35 +67,35 @@ class PendingRecoveryServiceTest {
 		});
 	}
 
+	private void stalePendingAre(CommitLog... logs) {
+		when(repository.findByStatusAndCreatedAtBeforeOrderBySequenceNumber(eq(CommitStatus.PENDING), any()))
+			.thenReturn(List.of(logs));
+	}
+
+	private void retryableFailedAre(CommitLog... logs) {
+		when(repository.findByStatusAndAttemptCountLessThanAndUpdatedAtBeforeOrderBySequenceNumber(
+				eq(CommitStatus.FAILED), anyInt(), any()))
+			.thenReturn(List.of(logs));
+	}
+
+	// happy path
+
 	@Test
 	void shouldReprocessStalePendingOnStartup() {
 		serializerRunsTasksInline();
-		when(repository.findByStatusAndCreatedAtBeforeOrderBySequenceNumber(eq(CommitStatus.PENDING), any()))
-			.thenReturn(List.of(log(1L, 1L)));
+		stalePendingAre(log(1L, 1L));
 
-		service(true).onStartup();
+		enabledService.onStartup();
 
 		verify(processing).process(1L);
 	}
 
 	@Test
-	void shouldNotReprocessFreshPending() {
-		service(true).recover();
-
-		ArgumentCaptor<Instant> threshold = ArgumentCaptor.forClass(Instant.class);
-		verify(repository).findByStatusAndCreatedAtBeforeOrderBySequenceNumber(eq(CommitStatus.PENDING),
-				threshold.capture());
-		assertThat(threshold.getValue()).isEqualTo(NOW.minus(Duration.ofMinutes(5)));
-	}
-
-	@Test
-	void shouldReprocessFailedRecordsUpToMaxAttempts() {
+	void shouldReprocessRetryableFailedRecords() {
 		serializerRunsTasksInline();
-		when(repository.findByStatusAndAttemptCountLessThanAndUpdatedAtBeforeOrderBySequenceNumber(
-				eq(CommitStatus.FAILED), eq(3), any()))
-			.thenReturn(List.of(log(2L, 2L)));
+		retryableFailedAre(log(2L, 2L));
 
-		service(true).recover();
+		enabledService.recover();
 
 		verify(processing).process(2L);
 	}
@@ -98,13 +103,10 @@ class PendingRecoveryServiceTest {
 	@Test
 	void shouldProcessPendingAndFailedInSequenceOrder() {
 		serializerRunsTasksInline();
-		when(repository.findByStatusAndCreatedAtBeforeOrderBySequenceNumber(eq(CommitStatus.PENDING), any()))
-			.thenReturn(List.of(log(30L, 3L)));
-		when(repository.findByStatusAndAttemptCountLessThanAndUpdatedAtBeforeOrderBySequenceNumber(
-				eq(CommitStatus.FAILED), anyInt(), any()))
-			.thenReturn(List.of(log(10L, 1L), log(20L, 2L)));
+		stalePendingAre(log(30L, 3L));
+		retryableFailedAre(log(10L, 1L), log(20L, 2L));
 
-		service(true).recover();
+		enabledService.recover();
 
 		InOrder order = inOrder(processing);
 		order.verify(processing).process(10L);
@@ -113,8 +115,73 @@ class PendingRecoveryServiceTest {
 	}
 
 	@Test
+	void shouldQueueEachCandidateThroughTheSerializer() {
+		stalePendingAre(log(1L, 1L));
+		retryableFailedAre(log(2L, 2L));
+
+		enabledService.recover();
+
+		verify(serializer, times(2)).submit(any(Runnable.class));
+	}
+
+	@Test
+	void shouldNotProcessOutsideTheSerializer() {
+		stalePendingAre(log(1L, 1L));
+
+		enabledService.recover();
+
+		verify(processing, never()).process(1L);
+	}
+
+	// query thresholds
+
+	@Test
+	void shouldOnlyLookForPendingCreatedBeforeTheMinimumAge() {
+		enabledService.recover();
+
+		ArgumentCaptor<Instant> threshold = ArgumentCaptor.forClass(Instant.class);
+		verify(repository).findByStatusAndCreatedAtBeforeOrderBySequenceNumber(eq(CommitStatus.PENDING),
+				threshold.capture());
+		assertThat(threshold.getValue()).isEqualTo(NOW.minus(MIN_AGE));
+	}
+
+	@Test
+	void shouldOnlyLookForFailedUpdatedBeforeTheMinimumAge() {
+		enabledService.recover();
+
+		ArgumentCaptor<Instant> threshold = ArgumentCaptor.forClass(Instant.class);
+		verify(repository).findByStatusAndAttemptCountLessThanAndUpdatedAtBeforeOrderBySequenceNumber(
+				eq(CommitStatus.FAILED), anyInt(), threshold.capture());
+		assertThat(threshold.getValue()).isEqualTo(NOW.minus(MIN_AGE));
+	}
+
+	@Test
+	void shouldOnlyLookForFailedWithAttemptsBelowTheMaximum() {
+		enabledService.recover();
+
+		verify(repository).findByStatusAndAttemptCountLessThanAndUpdatedAtBeforeOrderBySequenceNumber(
+				eq(CommitStatus.FAILED), eq(MAX_ATTEMPTS), any());
+	}
+
+	// edge cases
+
+	@Test
+	void shouldNotQueueAnythingWhenThereAreNoCandidates() {
+		enabledService.recover();
+
+		verifyNoInteractions(serializer);
+	}
+
+	@Test
 	void shouldDoNothingWhenRecoveryIsDisabled() {
 		service(false).recover();
+
+		verifyNoInteractions(repository, serializer, processing);
+	}
+
+	@Test
+	void shouldDoNothingOnStartupWhenRecoveryIsDisabled() {
+		service(false).onStartup();
 
 		verifyNoInteractions(repository, serializer, processing);
 	}

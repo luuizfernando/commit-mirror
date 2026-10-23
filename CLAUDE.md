@@ -30,7 +30,31 @@ Integration tests use Testcontainers (real Postgres), so Docker must be running.
 - Actuator runs on a separate management port (`MANAGEMENT_PORT`, default 8081), exposing only `health` and `info` with probes. `HealthEndpointIT` asserts this.
 - Config comes from env vars (`DB_URL`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `SERVER_PORT`, `MANAGEMENT_PORT`, `TELEGRAM_*`, `APP_GITHUB_PAT`, `GITHUB_*`, `GIT_AUTHOR_*`, `RECOVERY_*`); see `.env.example` and `docs/RUNBOOK.md`. The app refuses to start without the Telegram and GitHub secrets.
 - Resilience4j runs as core modules configured in `config/ResilienceConfig`; GitHub writes are serialized through `LogWriteSerializer` (single worker) and unfinished commits are re-queued by `PendingRecoveryService`.
-- Integration tests extend `AbstractFlowIT` (real Postgres + stateful `FakeGitHubServer`/`FakeTelegramServer` in `src/test/.../support`, also runnable standalone for manual tests, see `docs/TESTE-LOCAL.md`).
+- Integration tests extend `AbstractFlowIT` (real Postgres + stateful `FakeGitHubServer`/`FakeTelegramServer` in `src/test/.../support`, also runnable standalone for manual tests).
+
+## Testing
+
+### Non-negotiable rule
+
+Never alter a test just to make it pass. If a test (new or existing) fails, the problem is in the production code or in the understanding of the requirement, never in the test's expectation. Fix the production code, or stop and talk to the user if the failure reveals an ambiguity in the requirement. Changing an assertion, expected value, mock, setup, timeout or adding `.skip`/`@Disabled` to make a test pass is forbidden, without exception.
+
+### Rules
+
+1. **Quantity**: no minimum or maximum. Write as many tests as needed to truly cover the functionality, neither more nor less to meet a numerical target (the JaCoCo gates are a floor, not a goal).
+2. **One concept per test**: each test validates a single behavior. If a test verifies more than one, split it.
+3. **Clean test code**: same quality standard as production code. Short test methods and descriptive names for tests and variables; the name must make clear what is validated and under which conditions without reading the body.
+4. **F.I.R.S.T.**
+   - **Fast**: avoid real I/O, real network calls and unnecessary sleeps/timeouts in unit tests; use mocks/stubs where it makes sense. Real Postgres and fake HTTP servers belong only in `*IT` tests.
+   - **Independent**: each test runs in isolation and in any order; no test depends on state left by another (reset DB rows and fake server state between tests).
+   - **Repeatable**: same result in any environment (dev, CI, any machine). No reliance on system date/time, variable external data or execution order; inject a fixed `Clock` (see `ClockConfig`) instead of `Clock.systemUTC()`.
+   - **Self-validating**: a clear pass/fail via assertions, never manual inspection of logs or output.
+   - **Timely**: write tests alongside (or immediately before) the production code they cover, not as a disconnected batch after the feature is done.
+5. **Trivial tests count too**: don't skip "obvious" cases, such as the correct return value for the simplest happy path.
+6. **Always consider edge cases**: null/empty values, empty lists, numeric limits (zero, negative, maximum), expected errors/exceptions, timeouts, and concurrency where applicable (e.g. `LogWriteSerializer`, the `sequence_number` `UNIQUE` constraint).
+
+### Reporting
+
+When presenting created tests, group them by what they cover (e.g. "happy path", "input validation", "edge cases", "error handling") and state, one line per test, what it validates, not just the method name. If project conventions are missing for something, ask before writing the tests; never make silent assumptions in the final response.
 
 ## CI/CD and deploy
 

@@ -10,10 +10,8 @@ import static org.mockito.Mockito.when;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 
 import com.luiz.commit_mirror.TestProperties;
-import com.luiz.commit_mirror.config.AppProperties;
 import com.luiz.commit_mirror.dto.TelegramChat;
 import com.luiz.commit_mirror.dto.TelegramMessage;
 import com.luiz.commit_mirror.dto.TelegramUpdate;
@@ -23,11 +21,15 @@ import com.luiz.commit_mirror.service.command.BotCommand;
 import com.luiz.commit_mirror.service.command.CommandContext;
 import com.luiz.commit_mirror.service.command.CommandRegistry;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
 class UpdateDispatcherTest {
 
-	private static final long ALLOWED_USER = 42L;
+	private static final long UPDATE_ID = 1L;
+
+	private static final long CHAT_ID = 100L;
+
+	private static final long ALLOWED_USER = TestProperties.telegram().allowedUserId();
+
+	private static final long OTHER_USER = 7L;
 
 	private final TelegramClient telegramClient = mock(TelegramClient.class);
 
@@ -37,55 +39,105 @@ class UpdateDispatcherTest {
 
 	UpdateDispatcherTest() {
 		when(commitCommand.name()).thenReturn("commit");
-		AppProperties properties = TestProperties.withTelegram(
-				new AppProperties.Telegram("token", "secret", ALLOWED_USER, "http://telegram"));
-		this.dispatcher = new UpdateDispatcher(new UserAllowlist(properties), new CommandParser(),
+		this.dispatcher = new UpdateDispatcher(new UserAllowlist(TestProperties.defaults()), new CommandParser(),
 				new CommandRegistry(List.of(commitCommand)), telegramClient);
 	}
 
-	@Test
-	void shouldIgnoreUpdateWithoutMessage() {
-		dispatcher.dispatch(new TelegramUpdate(1L, null));
+	private static TelegramUpdate update(TelegramUser from, TelegramChat chat, String text) {
+		return new TelegramUpdate(UPDATE_ID, new TelegramMessage(5L, from, chat, text));
+	}
 
+	private static TelegramUpdate update(long userId, String text) {
+		return update(new TelegramUser(userId), new TelegramChat(CHAT_ID), text);
+	}
+
+	/** An ignored update runs no command and sends no reply. */
+	private void verifyIgnoredSilently() {
 		verify(commitCommand, never()).execute(any());
 		verifyNoInteractions(telegramClient);
+	}
+
+	// happy path
+
+	@Test
+	void shouldExecuteResolvedCommandWithContext() {
+		dispatcher.dispatch(update(ALLOWED_USER, "/commit hello world"));
+
+		verify(commitCommand).execute(new CommandContext(UPDATE_ID, CHAT_ID, ALLOWED_USER, "hello world"));
+	}
+
+	// ignored updates
+
+	@Test
+	void shouldIgnoreUpdateWithoutMessage() {
+		dispatcher.dispatch(new TelegramUpdate(UPDATE_ID, null));
+
+		verifyIgnoredSilently();
 	}
 
 	@Test
 	void shouldIgnoreMessageWithoutText() {
 		dispatcher.dispatch(update(ALLOWED_USER, null));
 
-		verify(commitCommand, never()).execute(any());
-		verifyNoInteractions(telegramClient);
+		verifyIgnoredSilently();
+	}
+
+	@Test
+	void shouldIgnoreMessageWithoutSender() {
+		dispatcher.dispatch(update(null, new TelegramChat(CHAT_ID), "/commit hello"));
+
+		verifyIgnoredSilently();
+	}
+
+	@Test
+	void shouldIgnoreMessageWithoutChat() {
+		dispatcher.dispatch(update(new TelegramUser(ALLOWED_USER), null, "/commit hello"));
+
+		verifyIgnoredSilently();
 	}
 
 	@Test
 	void shouldIgnoreUserOutsideAllowlistSilently() {
-		dispatcher.dispatch(update(7L, "/commit hello"));
+		dispatcher.dispatch(update(OTHER_USER, "/commit hello"));
+
+		verifyIgnoredSilently();
+	}
+
+	@Test
+	void shouldIgnoreTextThatIsNotACommand() {
+		dispatcher.dispatch(update(ALLOWED_USER, "just chatting"));
+
+		verifyIgnoredSilently();
+	}
+
+	@Test
+	void shouldNotExecuteCommitWhenTextIsOnlyASlash() {
+		dispatcher.dispatch(update(ALLOWED_USER, "/"));
 
 		verify(commitCommand, never()).execute(any());
-		verifyNoInteractions(telegramClient);
 	}
+
+	@Test
+	void shouldNotExecuteCommitWhenCommandIsCapitalized() {
+		dispatcher.dispatch(update(ALLOWED_USER, "/Commit hello"));
+
+		verify(commitCommand, never()).execute(any());
+	}
+
+	// unknown command
 
 	@Test
 	void shouldReplyWhenCommandIsUnknown() {
 		dispatcher.dispatch(update(ALLOWED_USER, "/unknown"));
 
-		verify(telegramClient).sendMessage(100L, "Comando desconhecido: /unknown");
-		verify(commitCommand, never()).execute(any());
+		verify(telegramClient).sendMessage(CHAT_ID, "Comando desconhecido: /unknown");
 	}
 
 	@Test
-	void shouldExecuteResolvedCommandWithContext() {
-		dispatcher.dispatch(update(ALLOWED_USER, "/commit hello world"));
+	void shouldNotExecuteAnyCommandWhenCommandIsUnknown() {
+		dispatcher.dispatch(update(ALLOWED_USER, "/unknown"));
 
-		ArgumentCaptor<CommandContext> captor = ArgumentCaptor.forClass(CommandContext.class);
-		verify(commitCommand).execute(captor.capture());
-		assertThat(captor.getValue()).isEqualTo(new CommandContext(1L, 100L, ALLOWED_USER, "hello world"));
-	}
-
-	private static TelegramUpdate update(long userId, String text) {
-		return new TelegramUpdate(1L, new TelegramMessage(5L, new TelegramUser(userId), new TelegramChat(100L), text));
+		verify(commitCommand, never()).execute(any());
 	}
 
 }

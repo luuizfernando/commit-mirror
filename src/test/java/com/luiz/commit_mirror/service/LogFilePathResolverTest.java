@@ -11,10 +11,10 @@ import com.luiz.commit_mirror.config.AppProperties;
 
 class LogFilePathResolverTest {
 
+	private final LogFilePathResolver resolver = new LogFilePathResolver(TestProperties.defaults());
+
 	@Test
 	void shouldResolveMonthlyFilePath() {
-		LogFilePathResolver resolver = new LogFilePathResolver(TestProperties.defaults());
-
 		assertThat(resolver.resolve(LocalDate.of(2026, 10, 21))).isEqualTo("logs/2026-10.md");
 	}
 
@@ -22,19 +22,29 @@ class LogFilePathResolverTest {
 	void shouldUseConfiguredDirectory() {
 		AppProperties.GitHub github = new AppProperties.GitHub("t", "o", "r", "main", "http://gh", "commit-logs", "n",
 				"e@x.com");
-		AppProperties base = TestProperties.defaults();
-		LogFilePathResolver resolver = new LogFilePathResolver(new AppProperties(base.telegram(), github,
-				base.timeZone(), base.recovery(), base.resilience()));
+		LogFilePathResolver customResolver = new LogFilePathResolver(TestProperties.withGitHub(github));
 
-		assertThat(resolver.resolve(LocalDate.of(2026, 1, 5))).isEqualTo("commit-logs/2026-01.md");
+		assertThat(customResolver.resolve(LocalDate.of(2026, 10, 21))).isEqualTo("commit-logs/2026-10.md");
 	}
 
 	@Test
-	void shouldUseCommitDateMonthAtMonthBoundary() {
-		LogFilePathResolver resolver = new LogFilePathResolver(TestProperties.defaults());
+	void shouldZeroPadSingleDigitMonth() {
+		assertThat(resolver.resolve(LocalDate.of(2026, 1, 5))).isEqualTo("logs/2026-01.md");
+	}
 
+	@Test
+	void shouldKeepLastDayOfMonthInThatMonthFile() {
 		assertThat(resolver.resolve(LocalDate.of(2026, 10, 31))).isEqualTo("logs/2026-10.md");
+	}
+
+	@Test
+	void shouldMoveFirstDayOfMonthToTheNewMonthFile() {
 		assertThat(resolver.resolve(LocalDate.of(2026, 11, 1))).isEqualTo("logs/2026-11.md");
+	}
+
+	@Test
+	void shouldMoveFirstDayOfYearToTheNewYearFile() {
+		assertThat(resolver.resolve(LocalDate.of(2027, 1, 1))).isEqualTo("logs/2027-01.md");
 	}
 
 }

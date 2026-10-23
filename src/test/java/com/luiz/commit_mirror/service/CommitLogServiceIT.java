@@ -24,6 +24,8 @@ import com.luiz.commit_mirror.repository.CommitLogRepository;
 @SpringBootTest
 class CommitLogServiceIT {
 
+	private static final int CONCURRENT_COMMITS = 10;
+
 	@Autowired
 	private CommitLogService service;
 
@@ -35,17 +37,13 @@ class CommitLogServiceIT {
 		repository.deleteAll();
 	}
 
-	@Test
-	void shouldGenerateDistinctSequencesUnderConcurrentCommits() {
-		ExecutorService pool = Executors.newFixedThreadPool(10);
+	private List<CommitLog> registerConcurrently() {
+		ExecutorService pool = Executors.newFixedThreadPool(CONCURRENT_COMMITS);
 		try {
-			List<CompletableFuture<CommitLog>> futures = IntStream.rangeClosed(1, 10)
+			List<CompletableFuture<CommitLog>> futures = IntStream.rangeClosed(1, CONCURRENT_COMMITS)
 				.mapToObj(i -> CompletableFuture.supplyAsync(() -> service.register(i, 100L, "x").orElseThrow(), pool))
 				.toList();
-
-			List<Long> sequences = futures.stream().map(f -> f.join().getSequenceNumber()).sorted().toList();
-
-			assertThat(sequences).containsExactly(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L, 9L, 10L);
+			return futures.stream().map(CompletableFuture::join).toList();
 		}
 		finally {
 			pool.shutdownNow();
@@ -53,10 +51,32 @@ class CommitLogServiceIT {
 	}
 
 	@Test
-	void shouldIgnoreRepeatedUpdateId() {
-		assertThat(service.register(1L, 100L, "x")).isPresent();
+	void shouldGenerateDistinctConsecutiveSequencesUnderConcurrentCommits() {
+		List<Long> sequences = registerConcurrently().stream().map(CommitLog::getSequenceNumber).sorted().toList();
+
+		assertThat(sequences).containsExactly(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L, 9L, 10L);
+	}
+
+	@Test
+	void shouldPersistOneRowPerConcurrentCommit() {
+		registerConcurrently();
+
+		assertThat(repository.count()).isEqualTo(CONCURRENT_COMMITS);
+	}
+
+	@Test
+	void shouldReturnEmptyWhenUpdateIdIsRegisteredTwice() {
+		service.register(1L, 100L, "x");
 
 		assertThat(service.register(1L, 100L, "x")).isEmpty();
+	}
+
+	@Test
+	void shouldPersistOnlyOneRowWhenUpdateIdIsRegisteredTwice() {
+		service.register(1L, 100L, "x");
+
+		service.register(1L, 100L, "x");
+
 		assertThat(repository.count()).isEqualTo(1L);
 	}
 

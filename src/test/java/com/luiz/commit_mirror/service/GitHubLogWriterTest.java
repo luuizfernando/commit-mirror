@@ -2,15 +2,16 @@ package com.luiz.commit_mirror.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.junit.jupiter.api.Test;
 
@@ -23,7 +24,6 @@ import com.luiz.commit_mirror.integration.GitHubPermanentException;
 import com.luiz.commit_mirror.integration.GitHubTransientException;
 
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
-import io.github.resilience4j.retry.Retry;
 
 class GitHubLogWriterTest {
 
@@ -46,65 +46,140 @@ class GitHubLogWriterTest {
 		when(gateway.appendLine(anyString(), anyString(), anyString(), any())).thenThrow(exception);
 	}
 
-	@Test
-	void shouldRetryOnConflict() {
+	private void gatewayFailsTwiceWithConflictThenReturnsSha() {
 		when(gateway.appendLine(anyString(), anyString(), anyString(), any()))
 			.thenThrow(new GitHubConflictException("409"))
 			.thenThrow(new GitHubConflictException("409"))
 			.thenReturn("sha");
-
-		assertThat(append()).isEqualTo("sha");
-		verify(gateway, times(3)).appendLine(anyString(), anyString(), anyString(), any());
 	}
 
-	@Test
-	void shouldRetryOnServerErrorWithBackoff() {
+	private void gatewayFailsOnceWithServerErrorThenReturnsSha() {
 		when(gateway.appendLine(anyString(), anyString(), anyString(), any()))
 			.thenThrow(new GitHubTransientException("503"))
 			.thenReturn("sha");
+	}
+
+	private void verifyGatewayCalled(int times) {
+		verify(gateway, times(times)).appendLine(anyString(), anyString(), anyString(), any());
+	}
+
+	/** Two appends exhaust the retries with transient failures: 2 x 3 calls reach the minimum of 5 at 100%. */
+	private void tripCircuitWithServerErrors() {
+		gatewayThrowsAlways(new GitHubTransientException("503"));
+		catchThrowable(this::append);
+		catchThrowable(this::append);
+	}
+
+	private void moveCircuitToHalfOpen() {
+		circuitBreaker.transitionToOpenState();
+		circuitBreaker.transitionToHalfOpenState();
+	}
+
+	// happy path
+
+	@Test
+	void shouldReturnTheShaFromTheGateway() {
+		when(gateway.appendLine("logs/2026-10.md", "Commit 1", "Commit 1", WHEN)).thenReturn("sha");
 
 		assertThat(append()).isEqualTo("sha");
-		verify(gateway, times(2)).appendLine(anyString(), anyString(), anyString(), any());
+	}
+
+	// retry
+
+	@Test
+	void shouldReturnShaWhenConflictsAreFollowedBySuccess() {
+		gatewayFailsTwiceWithConflictThenReturnsSha();
+
+		assertThat(append()).isEqualTo("sha");
 	}
 
 	@Test
-	void shouldNotRetryOnUnauthorized() {
+	void shouldRepeatTheWholeAppendForEachConflict() {
+		gatewayFailsTwiceWithConflictThenReturnsSha();
+
+		append();
+
+		verifyGatewayCalled(3);
+	}
+
+	@Test
+	void shouldReturnShaWhenServerErrorIsFollowedBySuccess() {
+		gatewayFailsOnceWithServerErrorThenReturnsSha();
+
+		assertThat(append()).isEqualTo("sha");
+	}
+
+	@Test
+	void shouldRepeatTheWholeAppendAfterServerError() {
+		gatewayFailsOnceWithServerErrorThenReturnsSha();
+
+		append();
+
+		verifyGatewayCalled(2);
+	}
+
+	@Test
+	void shouldPropagatePermanentFailure() {
 		gatewayThrowsAlways(new GitHubPermanentException("401"));
 
 		assertThatThrownBy(this::append).isInstanceOf(GitHubPermanentException.class);
-		verify(gateway, times(1)).appendLine(anyString(), anyString(), anyString(), any());
 	}
 
 	@Test
-	void shouldStopAfterMaxAttempts() {
+	void shouldNotRetryPermanentFailure() {
+		gatewayThrowsAlways(new GitHubPermanentException("401"));
+
+		catchThrowable(this::append);
+
+		verifyGatewayCalled(1);
+	}
+
+	@Test
+	void shouldPropagateTransientFailureWhenRetriesAreExhausted() {
 		gatewayThrowsAlways(new GitHubTransientException("503"));
 
 		assertThatThrownBy(this::append).isInstanceOf(GitHubTransientException.class);
-		verify(gateway, times(resilience.retryMaxAttempts())).appendLine(anyString(), anyString(), anyString(),
-				any());
 	}
+
+	@Test
+	void shouldStopRetryingAfterMaxAttempts() {
+		gatewayThrowsAlways(new GitHubTransientException("503"));
+
+		catchThrowable(this::append);
+
+		verifyGatewayCalled(resilience.retryMaxAttempts());
+	}
+
+	@Test
+	void shouldPropagateConflictWhenRetriesAreExhausted() {
+		gatewayThrowsAlways(new GitHubConflictException("409"));
+
+		assertThatThrownBy(this::append).isInstanceOf(GitHubConflictException.class);
+	}
+
+	// circuit breaker
 
 	@Test
 	void shouldOpenCircuitAfterFailureRateThreshold() {
-		gatewayThrowsAlways(new GitHubTransientException("503"));
-
-		assertThatThrownBy(this::append).isInstanceOf(GitHubTransientException.class);
-		assertThatThrownBy(this::append).isInstanceOf(GitHubTransientException.class);
+		tripCircuitWithServerErrors();
 
 		assertThat(circuitBreaker.getState()).isEqualTo(CircuitBreaker.State.OPEN);
 	}
 
 	@Test
-	void shouldFailFastWhenCircuitIsOpen() {
-		gatewayThrowsAlways(new GitHubTransientException("503"));
-		assertThatThrownBy(this::append).isInstanceOf(GitHubTransientException.class);
-		assertThatThrownBy(this::append).isInstanceOf(GitHubTransientException.class);
-		int callsWhenOpened = org.mockito.Mockito.mockingDetails(gateway).getInvocations().size();
+	void shouldFailFastWithTransientCircuitErrorWhenCircuitIsOpen() {
+		circuitBreaker.transitionToOpenState();
 
-		assertThatThrownBy(this::append).isInstanceOf(GitHubTransientException.class)
-			.hasMessageContaining("circuit");
+		assertThatThrownBy(this::append).isInstanceOf(GitHubTransientException.class).hasMessageContaining("circuit");
+	}
 
-		assertThat(org.mockito.Mockito.mockingDetails(gateway).getInvocations()).hasSize(callsWhenOpened);
+	@Test
+	void shouldNotCallGatewayWhenCircuitIsOpen() {
+		circuitBreaker.transitionToOpenState();
+
+		catchThrowable(this::append);
+
+		verifyNoInteractions(gateway);
 	}
 
 	@Test
@@ -112,39 +187,43 @@ class GitHubLogWriterTest {
 		gatewayThrowsAlways(new GitHubConflictException("409"));
 
 		for (int i = 0; i < 5; i++) {
-			assertThatThrownBy(this::append).isInstanceOf(GitHubConflictException.class);
+			catchThrowable(this::append);
 		}
 
 		assertThat(circuitBreaker.getState()).isEqualTo(CircuitBreaker.State.CLOSED);
 	}
 
 	@Test
-	void shouldCloseAfterSuccessfulHalfOpenCalls() throws InterruptedException {
-		AtomicBoolean healthy = new AtomicBoolean(false);
-		when(gateway.appendLine(anyString(), anyString(), anyString(), any())).thenAnswer(invocation -> {
-			if (healthy.get()) {
-				return "sha";
-			}
-			throw new GitHubTransientException("503");
-		});
-		assertThatThrownBy(this::append).isInstanceOf(GitHubTransientException.class);
-		assertThatThrownBy(this::append).isInstanceOf(GitHubTransientException.class);
-		assertThat(circuitBreaker.getState()).isEqualTo(CircuitBreaker.State.OPEN);
+	void shouldNotCountPermanentFailuresAsFailures() {
+		gatewayThrowsAlways(new GitHubPermanentException("401"));
 
-		Thread.sleep(resilience.circuitOpenDuration().toMillis() + 30);
-		healthy.set(true);
+		for (int i = 0; i < resilience.circuitMinimumCalls(); i++) {
+			catchThrowable(this::append);
+		}
+
+		assertThat(circuitBreaker.getState()).isEqualTo(CircuitBreaker.State.CLOSED);
+	}
+
+	@Test
+	void shouldCloseCircuitAfterSuccessfulHalfOpenCalls() {
+		moveCircuitToHalfOpen();
+		when(gateway.appendLine(anyString(), anyString(), anyString(), any())).thenReturn("sha");
+
 		for (int i = 0; i < resilience.circuitHalfOpenCalls(); i++) {
-			assertThat(append()).isEqualTo("sha");
+			append();
 		}
 
 		assertThat(circuitBreaker.getState()).isEqualTo(CircuitBreaker.State.CLOSED);
 	}
 
 	@Test
-	void shouldCreateRetryWithConfiguredAttempts() {
-		Retry retry = ResilienceConfig.retry(resilience);
+	void shouldReopenCircuitWhenHalfOpenCallsFail() {
+		moveCircuitToHalfOpen();
+		gatewayThrowsAlways(new GitHubTransientException("503"));
 
-		assertThat(retry.getRetryConfig().getMaxAttempts()).isEqualTo(resilience.retryMaxAttempts());
+		catchThrowable(this::append);
+
+		assertThat(circuitBreaker.getState()).isEqualTo(CircuitBreaker.State.OPEN);
 	}
 
 }

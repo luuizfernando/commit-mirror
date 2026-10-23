@@ -20,19 +20,30 @@ class WebhookSecretValidatorTest {
 	}
 
 	@Test
-	void shouldRejectWhenSecretDiffers() {
+	void shouldRejectWhenSecretDiffersWithSameLength() {
 		assertThatThrownBy(() -> validator.validate("other-secret-x"))
 			.isInstanceOf(InvalidWebhookSecretException.class);
 	}
 
 	@Test
-	void shouldRejectWhenHeaderIsMissing() {
-		assertThatThrownBy(() -> validator.validate(null)).isInstanceOf(InvalidWebhookSecretException.class);
+	void shouldRejectWhenSecretHasDifferentLength() {
+		assertThatThrownBy(() -> validator.validate("short")).isInstanceOf(InvalidWebhookSecretException.class);
 	}
 
 	@Test
-	void shouldRejectWhenSecretHasDifferentLength() {
-		assertThatThrownBy(() -> validator.validate("short")).isInstanceOf(InvalidWebhookSecretException.class);
+	void shouldRejectWhenSecretDiffersOnlyInCase() {
+		assertThatThrownBy(() -> validator.validate("EXPECTED-SECRET"))
+			.isInstanceOf(InvalidWebhookSecretException.class);
+	}
+
+	@Test
+	void shouldRejectWhenSecretIsEmpty() {
+		assertThatThrownBy(() -> validator.validate("")).isInstanceOf(InvalidWebhookSecretException.class);
+	}
+
+	@Test
+	void shouldRejectWhenHeaderIsMissing() {
+		assertThatThrownBy(() -> validator.validate(null)).isInstanceOf(InvalidWebhookSecretException.class);
 	}
 
 }

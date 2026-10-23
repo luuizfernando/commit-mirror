@@ -8,20 +8,22 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
+import com.luiz.commit_mirror.dto.TelegramChat;
+import com.luiz.commit_mirror.dto.TelegramMessage;
 import com.luiz.commit_mirror.dto.TelegramUpdate;
+import com.luiz.commit_mirror.dto.TelegramUser;
 import com.luiz.commit_mirror.exception.InvalidWebhookSecretException;
 import com.luiz.commit_mirror.service.UpdateDispatcher;
 import com.luiz.commit_mirror.service.WebhookSecretValidator;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 @ActiveProfiles("test")
 @WebMvcTest(WebhookController.class)
@@ -29,9 +31,17 @@ class WebhookControllerTest {
 
 	private static final String SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token";
 
+	private static final String VALID_SECRET = "ok";
+
+	private static final String WRONG_SECRET = "wrong";
+
+	/** Real Telegram payloads carry more fields than the DTOs map; they must be ignored. */
 	private static final String COMMIT_UPDATE = """
 			{"update_id": 10, "message": {"message_id": 5, "from": {"id": 42, "is_bot": false},
 			 "chat": {"id": 100, "type": "private"}, "text": "/commit hello", "date": 1700000000}}""";
+
+	private static final String UPDATE_WITHOUT_TEXT = """
+			{"update_id": 11, "message": {"message_id": 6, "chat": {"id": 100}}}""";
 
 	@Autowired
 	private MockMvc mockMvc;
@@ -42,73 +52,108 @@ class WebhookControllerTest {
 	@MockitoBean
 	private UpdateDispatcher dispatcher;
 
-	@Test
-	void shouldReturn403WhenSecretIsInvalid() throws Exception {
-		doThrow(new InvalidWebhookSecretException()).when(secretValidator).validate("wrong");
+	private static MockHttpServletRequestBuilder webhook(String body) {
+		return post("/telegram/webhook").contentType(MediaType.APPLICATION_JSON).content(body);
+	}
 
-		mockMvc.perform(post("/telegram/webhook").header(SECRET_HEADER, "wrong")
-			.contentType(MediaType.APPLICATION_JSON)
-			.content(COMMIT_UPDATE)).andExpect(status().isForbidden()).andExpect(content().string(""));
+	private ResultActions postWithSecret(String secret, String body) throws Exception {
+		return mockMvc.perform(webhook(body).header(SECRET_HEADER, secret));
+	}
+
+	private void secretIsRejected(String secret) {
+		doThrow(new InvalidWebhookSecretException()).when(secretValidator).validate(secret);
+	}
+
+	// happy path
+
+	@Test
+	void shouldReturnEmpty200ForValidUpdate() throws Exception {
+		postWithSecret(VALID_SECRET, COMMIT_UPDATE).andExpect(status().isOk()).andExpect(content().string(""));
 	}
 
 	@Test
-	void shouldReturn403WhenSecretHeaderIsMissing() throws Exception {
-		doThrow(new InvalidWebhookSecretException()).when(secretValidator).validate(null);
+	void shouldValidateTheSecretFromTheHeader() throws Exception {
+		postWithSecret(VALID_SECRET, COMMIT_UPDATE);
 
-		mockMvc.perform(post("/telegram/webhook").contentType(MediaType.APPLICATION_JSON).content(COMMIT_UPDATE))
-			.andExpect(status().isForbidden());
+		verify(secretValidator).validate(VALID_SECRET);
 	}
 
 	@Test
-	void shouldNotCallServiceWhenSecretIsInvalid() throws Exception {
-		doThrow(new InvalidWebhookSecretException()).when(secretValidator).validate("wrong");
+	void shouldDispatchTheDeserializedUpdate() throws Exception {
+		postWithSecret(VALID_SECRET, COMMIT_UPDATE);
 
-		mockMvc.perform(post("/telegram/webhook").header(SECRET_HEADER, "wrong")
-			.contentType(MediaType.APPLICATION_JSON)
-			.content(COMMIT_UPDATE));
-
-		verifyNoInteractions(dispatcher);
-	}
-
-	@Test
-	void shouldReturnEmpty200WhenUserIsNotAllowed() throws Exception {
-		mockMvc.perform(post("/telegram/webhook").header(SECRET_HEADER, "ok")
-			.contentType(MediaType.APPLICATION_JSON)
-			.content(COMMIT_UPDATE.replace("\"id\": 42", "\"id\": 7")))
-			.andExpect(status().isOk())
-			.andExpect(content().string(""));
+		verify(dispatcher).dispatch(new TelegramUpdate(10L,
+				new TelegramMessage(5L, new TelegramUser(42L), new TelegramChat(100L), "/commit hello")));
 	}
 
 	@Test
 	void shouldReturnEmpty200WhenMessageHasNoText() throws Exception {
-		mockMvc.perform(post("/telegram/webhook").header(SECRET_HEADER, "ok")
-			.contentType(MediaType.APPLICATION_JSON)
-			.content("{\"update_id\": 11, \"message\": {\"message_id\": 6, \"chat\": {\"id\": 100}}}"))
-			.andExpect(status().isOk())
-			.andExpect(content().string(""));
+		postWithSecret(VALID_SECRET, UPDATE_WITHOUT_TEXT).andExpect(status().isOk()).andExpect(content().string(""));
 	}
 
 	@Test
-	void shouldReturn200AndDispatchOnHappyPath() throws Exception {
-		mockMvc.perform(post("/telegram/webhook").header(SECRET_HEADER, "ok")
-			.contentType(MediaType.APPLICATION_JSON)
-			.content(COMMIT_UPDATE)).andExpect(status().isOk()).andExpect(content().string(""));
+	void shouldDispatchUpdateWithoutTextLeavingMissingFieldsNull() throws Exception {
+		postWithSecret(VALID_SECRET, UPDATE_WITHOUT_TEXT);
 
-		ArgumentCaptor<TelegramUpdate> captor = ArgumentCaptor.forClass(TelegramUpdate.class);
-		verify(secretValidator).validate("ok");
-		verify(dispatcher).dispatch(captor.capture());
-		assertThat(captor.getValue().updateId()).isEqualTo(10L);
-		assertThat(captor.getValue().message().text()).isEqualTo("/commit hello");
-		assertThat(captor.getValue().message().chat().id()).isEqualTo(100L);
+		verify(dispatcher).dispatch(new TelegramUpdate(11L, new TelegramMessage(6L, null, new TelegramChat(100L), null)));
+	}
+
+	// authentication
+
+	@Test
+	void shouldReturnEmpty403WhenSecretIsInvalid() throws Exception {
+		secretIsRejected(WRONG_SECRET);
+
+		postWithSecret(WRONG_SECRET, COMMIT_UPDATE).andExpect(status().isForbidden()).andExpect(content().string(""));
 	}
 
 	@Test
-	void shouldReturn400WhenBodyIsMalformed() throws Exception {
-		mockMvc.perform(post("/telegram/webhook").header(SECRET_HEADER, "ok")
-			.contentType(MediaType.APPLICATION_JSON)
-			.content("{not json")).andExpect(status().isBadRequest()).andExpect(content().string(""));
+	void shouldReturn403WhenSecretHeaderIsMissing() throws Exception {
+		secretIsRejected(null);
+
+		mockMvc.perform(webhook(COMMIT_UPDATE)).andExpect(status().isForbidden());
+	}
+
+	@Test
+	void shouldReturn403WhenSecretIsInvalidEvenIfBodyIsMalformed() throws Exception {
+		secretIsRejected(WRONG_SECRET);
+
+		postWithSecret(WRONG_SECRET, "{not json").andExpect(status().isForbidden());
+	}
+
+	@Test
+	void shouldReturn403WhenSecretHeaderIsMissingEvenIfBodyIsMalformed() throws Exception {
+		secretIsRejected(null);
+
+		mockMvc.perform(webhook("{not json")).andExpect(status().isForbidden());
+	}
+
+	@Test
+	void shouldNotDispatchWhenSecretIsInvalid() throws Exception {
+		secretIsRejected(WRONG_SECRET);
+
+		postWithSecret(WRONG_SECRET, COMMIT_UPDATE);
 
 		verifyNoInteractions(dispatcher);
+	}
+
+	// malformed input
+
+	@Test
+	void shouldReturnEmpty400WhenBodyIsMalformed() throws Exception {
+		postWithSecret(VALID_SECRET, "{not json").andExpect(status().isBadRequest()).andExpect(content().string(""));
+	}
+
+	@Test
+	void shouldNotDispatchWhenBodyIsMalformed() throws Exception {
+		postWithSecret(VALID_SECRET, "{not json");
+
+		verifyNoInteractions(dispatcher);
+	}
+
+	@Test
+	void shouldReturn400WhenBodyIsEmpty() throws Exception {
+		postWithSecret(VALID_SECRET, "").andExpect(status().isBadRequest());
 	}
 
 }

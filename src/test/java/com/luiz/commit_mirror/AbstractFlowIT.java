@@ -1,7 +1,12 @@
 package com.luiz.commit_mirror;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
+
 import java.net.http.HttpClient;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -15,17 +20,22 @@ import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.convention.TestBean;
 import org.springframework.web.client.RestClient;
 
+import com.luiz.commit_mirror.domain.CommitLog;
+import com.luiz.commit_mirror.domain.CommitStatus;
 import com.luiz.commit_mirror.repository.CommitLogRepository;
 import com.luiz.commit_mirror.support.FakeGitHubServer;
 import com.luiz.commit_mirror.support.FakeTelegramServer;
+import com.luiz.commit_mirror.support.MutableClock;
 
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 
 /**
  * Whole application against a real Postgres and stateful fakes of GitHub and Telegram. All subclasses share one
- * Spring context (and one container), so state is reset before every test.
+ * Spring context (and one container), so state is reset before every test. Time is a fixed {@link MutableClock}:
+ * it only moves when a test advances it, and it is rewound before every test.
  */
 @Import(TestcontainersConfiguration.class)
 @ActiveProfiles("test")
@@ -38,6 +48,13 @@ public abstract class AbstractFlowIT {
 	protected static final long ALLOWED_USER = 42L;
 
 	protected static final long CHAT_ID = 100L;
+
+	/** 12:00 in America/Sao_Paulo, far from any day or month boundary. */
+	protected static final Instant NOW = Instant.parse("2026-10-21T15:00:00Z");
+
+	protected static final String MONTH_FILE = "logs/2026-10.md";
+
+	protected static final MutableClock CLOCK = new MutableClock(NOW);
 
 	protected static final FakeGitHubServer GITHUB = new FakeGitHubServer().start(0);
 
@@ -53,8 +70,15 @@ public abstract class AbstractFlowIT {
 		registry.add("app.recovery.min-age", () -> "0s");
 	}
 
+	@TestBean
+	private Clock clock;
+
+	static Clock clock() {
+		return CLOCK;
+	}
+
 	@Value("${local.server.port}")
-	private int serverPort;
+	protected int serverPort;
 
 	@Autowired
 	protected CommitLogRepository repository;
@@ -68,6 +92,7 @@ public abstract class AbstractFlowIT {
 		GITHUB.reset();
 		TELEGRAM.reset();
 		githubCircuitBreaker.reset();
+		CLOCK.reset();
 	}
 
 	protected int postUpdate(String secret, long updateId, long userId, String text) {
@@ -92,6 +117,23 @@ public abstract class AbstractFlowIT {
 
 	protected static Duration timeout() {
 		return Duration.ofSeconds(15);
+	}
+
+	protected static void awaitGitHubCommits(int count) {
+		await().atMost(timeout()).untilAsserted(() -> assertThat(GITHUB.commits()).hasSize(count));
+	}
+
+	protected static void awaitTelegramMessages(int count) {
+		await().atMost(timeout()).untilAsserted(() -> assertThat(TELEGRAM.sent()).hasSize(count));
+	}
+
+	/** The single record the test created. */
+	protected CommitLog only() {
+		return repository.findAll().get(0);
+	}
+
+	protected void awaitOnlyRecordStatus(CommitStatus status) {
+		await().atMost(timeout()).untilAsserted(() -> assertThat(only().getStatus()).isEqualTo(status));
 	}
 
 }

@@ -9,36 +9,6 @@ import org.junit.jupiter.api.Test;
 
 class CommandRegistryTest {
 
-	@Test
-	void shouldResolveCommandByName() {
-		BotCommand commit = stubCommand("commit");
-		CommandRegistry registry = new CommandRegistry(List.of(commit, stubCommand("other")));
-
-		assertThat(registry.find("commit")).containsSame(commit);
-	}
-
-	@Test
-	void shouldReturnEmptyForUnknownCommand() {
-		CommandRegistry registry = new CommandRegistry(List.of(stubCommand("commit")));
-
-		assertThat(registry.find("nope")).isEmpty();
-	}
-
-	@Test
-	void shouldFailWhenTwoCommandsShareTheSameName() {
-		List<BotCommand> commands = List.of(stubCommand("commit"), stubCommand("commit"));
-
-		assertThatThrownBy(() -> new CommandRegistry(commands)).isInstanceOf(IllegalStateException.class)
-			.hasMessageContaining("commit");
-	}
-
-	@Test
-	void shouldResolveNewCommandWithoutChangingTheRegistry() {
-		BotCommand ping = stubCommand("ping");
-
-		assertThat(new CommandRegistry(List.of(stubCommand("commit"), ping)).find("ping")).containsSame(ping);
-	}
-
 	private static BotCommand stubCommand(String name) {
 		return new BotCommand() {
 			@Override
@@ -50,6 +20,34 @@ class CommandRegistryTest {
 			public void execute(CommandContext context) {
 			}
 		};
+	}
+
+	@Test
+	void shouldResolveCommandByNameAmongSeveral() {
+		BotCommand ping = stubCommand("ping");
+		CommandRegistry registry = new CommandRegistry(List.of(stubCommand("commit"), ping));
+
+		assertThat(registry.find("ping")).containsSame(ping);
+	}
+
+	@Test
+	void shouldReturnEmptyForUnknownCommand() {
+		CommandRegistry registry = new CommandRegistry(List.of(stubCommand("commit")));
+
+		assertThat(registry.find("nope")).isEmpty();
+	}
+
+	@Test
+	void shouldReturnEmptyWhenNoCommandIsRegistered() {
+		assertThat(new CommandRegistry(List.of()).find("commit")).isEmpty();
+	}
+
+	@Test
+	void shouldFailNamingTheDuplicateWhenTwoCommandsShareTheSameName() {
+		List<BotCommand> commands = List.of(stubCommand("commit"), stubCommand("commit"));
+
+		assertThatThrownBy(() -> new CommandRegistry(commands)).isInstanceOf(IllegalStateException.class)
+			.hasMessageContaining("commit");
 	}
 
 }

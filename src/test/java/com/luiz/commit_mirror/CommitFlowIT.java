@@ -3,8 +3,6 @@ package com.luiz.commit_mirror;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -22,96 +20,178 @@ class CommitFlowIT extends AbstractFlowIT {
 
 	private static final String TYPED_TEXT = "never-leaves-the-database";
 
-	private String monthFile() {
-		CommitLog first = repository.findAll().get(0);
-		return "logs/" + first.getCommitDate().toString().substring(0, 7) + ".md";
+	private static final int CONCURRENT_COMMITS = 10;
+
+	private Commit firstCommitToGitHub() {
+		postCommit(1L, TYPED_TEXT);
+		awaitGitHubCommits(1);
+		return GITHUB.commits().get(0);
 	}
 
-	@Test
-	void shouldCreateMonthFileOnFirstCommit() {
-		int status = postCommit(1L, TYPED_TEXT);
-
-		assertThat(status).isEqualTo(200);
-		await().atMost(timeout()).untilAsserted(() -> assertThat(GITHUB.commits()).hasSize(1));
-		assertThat(GITHUB.fileContent(monthFile())).isEqualTo("Commit 1\n");
-		assertThat(GITHUB.commits().get(0).message()).isEqualTo("Commit 1");
-		await().atMost(timeout())
-			.untilAsserted(() -> assertThat(TELEGRAM.sent()).containsExactly(new Sent(CHAT_ID, "Commit 1 registrado.")));
-	}
-
-	@Test
-	void shouldAppendOnSecondCommit() {
+	private void commitTwice() {
 		postCommit(1L, "one");
-		await().atMost(timeout()).untilAsserted(() -> assertThat(GITHUB.commits()).hasSize(1));
-
+		awaitGitHubCommits(1);
 		postCommit(2L, "two");
-		await().atMost(timeout()).untilAsserted(() -> assertThat(GITHUB.commits()).hasSize(2));
-
-		assertThat(GITHUB.fileContent(monthFile())).isEqualTo("Commit 1\nCommit 2\n");
-		assertThat(GITHUB.commits()).extracting(Commit::message).containsExactly("Commit 1", "Commit 2");
+		awaitGitHubCommits(2);
 	}
 
-	@Test
-	void shouldStoreSuccessWithShaAndSendAuthorAndExplicitDates() {
-		postCommit(1L, TYPED_TEXT);
-		await().atMost(timeout())
-			.untilAsserted(() -> assertThat(repository.findAll()).extracting(CommitLog::getStatus)
-				.containsExactly(CommitStatus.SUCCESS));
-
-		CommitLog saved = repository.findAll().get(0);
-		Commit commit = GITHUB.commits().get(0);
-		String expectedDate = saved.getCreatedAt().truncatedTo(ChronoUnit.SECONDS).toString();
-		assertThat(saved.getGithubCommitSha()).isNotBlank();
-		assertThat(commit.authorName()).isEqualTo("Test Author");
-		assertThat(commit.authorEmail()).isEqualTo("author@example.com");
-		assertThat(commit.authorDate()).isEqualTo(expectedDate);
-		assertThat(commit.committerDate()).isEqualTo(expectedDate);
-		assertThat(commit.branch()).isEqualTo("main");
-		assertThat(commit.authorization()).isEqualTo("Bearer test-github-token");
-		assertThat(Instant.parse(commit.authorDate())).isBeforeOrEqualTo(Instant.now());
-	}
-
-	@Test
-	void shouldNeverSendTypedTextToGitHub() {
-		postCommit(1L, TYPED_TEXT);
-		await().atMost(timeout()).untilAsserted(() -> assertThat(GITHUB.commits()).hasSize(1));
-
-		assertThat(GITHUB.commits()).noneMatch(commit -> commit.rawBody().contains(TYPED_TEXT));
-		assertThat(GITHUB.fileContent(monthFile())).doesNotContain(TYPED_TEXT);
-		assertThat(repository.findAll().get(0).getMessage()).isEqualTo(TYPED_TEXT);
-	}
-
-	@Test
-	void shouldIgnoreRedeliveredUpdate() {
-		postCommit(1L, "once");
-		await().atMost(timeout()).untilAsserted(() -> assertThat(GITHUB.commits()).hasSize(1));
-
-		int status = postCommit(1L, "once");
-
-		assertThat(status).isEqualTo(200);
-		assertThat(repository.count()).isEqualTo(1L);
-		assertThat(GITHUB.commits()).hasSize(1);
-	}
-
-	@Test
-	void shouldWriteTenConcurrentCommitsWithoutLossOrDuplication() {
-		ExecutorService pool = Executors.newFixedThreadPool(10);
+	private void postConcurrentCommits() {
+		ExecutorService pool = Executors.newFixedThreadPool(CONCURRENT_COMMITS);
 		try {
-			List<CompletableFuture<Integer>> posts = IntStream.rangeClosed(1, 10)
+			List<CompletableFuture<Integer>> posts = IntStream.rangeClosed(1, CONCURRENT_COMMITS)
 				.mapToObj(i -> CompletableFuture.supplyAsync(() -> postCommit(i, "concurrent"), pool))
 				.toList();
 			posts.forEach(CompletableFuture::join);
-
-			await().atMost(timeout()).untilAsserted(() -> assertThat(GITHUB.commits()).hasSize(10));
+			awaitGitHubCommits(CONCURRENT_COMMITS);
 		}
 		finally {
 			pool.shutdownNow();
 		}
+	}
 
-		List<String> lines = GITHUB.fileContent(monthFile()).lines().toList();
-		assertThat(lines).hasSize(10)
-			.containsExactlyInAnyOrder("Commit 1", "Commit 2", "Commit 3", "Commit 4", "Commit 5", "Commit 6",
-					"Commit 7", "Commit 8", "Commit 9", "Commit 10");
+	// first commit
+
+	@Test
+	void shouldAcceptCommitWebhookWith200() {
+		assertThat(postCommit(1L, TYPED_TEXT)).isEqualTo(200);
+	}
+
+	@Test
+	void shouldCreateMonthFileWithTheFirstLine() {
+		firstCommitToGitHub();
+
+		assertThat(GITHUB.fileContent(MONTH_FILE)).isEqualTo("Commit 1\n");
+	}
+
+	@Test
+	void shouldUseCommitNAsTheGitCommitMessage() {
+		assertThat(firstCommitToGitHub().message()).isEqualTo("Commit 1");
+	}
+
+	@Test
+	void shouldReplyConfirmationToTheUser() {
+		firstCommitToGitHub();
+
+		await().atMost(timeout())
+			.untilAsserted(() -> assertThat(TELEGRAM.sent()).containsExactly(new Sent(CHAT_ID, "Commit 1 registrado.")));
+	}
+
+	// second commit
+
+	@Test
+	void shouldAppendTheSecondLineToTheSameMonthFile() {
+		commitTwice();
+
+		assertThat(GITHUB.fileContent(MONTH_FILE)).isEqualTo("Commit 1\nCommit 2\n");
+	}
+
+	@Test
+	void shouldCreateOneGitCommitPerCommitInOrder() {
+		commitTwice();
+
+		assertThat(GITHUB.commits()).extracting(Commit::message).containsExactly("Commit 1", "Commit 2");
+	}
+
+	// stored outcome and commit metadata
+
+	@Test
+	void shouldStoreSuccessWithTheGitHubSha() {
+		postCommit(1L, TYPED_TEXT);
+		awaitOnlyRecordStatus(CommitStatus.SUCCESS);
+
+		assertThat(only().getGithubCommitSha()).isNotBlank();
+	}
+
+	@Test
+	void shouldSendTheConfiguredAuthorIdentity() {
+		Commit commit = firstCommitToGitHub();
+
+		assertThat(commit.authorName() + " <" + commit.authorEmail() + ">")
+			.isEqualTo("Test Author <author@example.com>");
+	}
+
+	@Test
+	void shouldDateTheAuthorWithTheCreationInstant() {
+		assertThat(firstCommitToGitHub().authorDate()).isEqualTo(NOW.toString());
+	}
+
+	@Test
+	void shouldDateTheCommitterWithTheCreationInstant() {
+		assertThat(firstCommitToGitHub().committerDate()).isEqualTo(NOW.toString());
+	}
+
+	@Test
+	void shouldCommitToTheConfiguredBranch() {
+		assertThat(firstCommitToGitHub().branch()).isEqualTo("main");
+	}
+
+	@Test
+	void shouldAuthenticateWithTheConfiguredToken() {
+		assertThat(firstCommitToGitHub().authorization()).isEqualTo("Bearer test-github-token");
+	}
+
+	// privacy
+
+	@Test
+	void shouldNeverSendTypedTextToGitHub() {
+		assertThat(firstCommitToGitHub().rawBody()).doesNotContain(TYPED_TEXT);
+	}
+
+	@Test
+	void shouldNeverWriteTypedTextToTheLogFile() {
+		firstCommitToGitHub();
+
+		assertThat(GITHUB.fileContent(MONTH_FILE)).doesNotContain(TYPED_TEXT);
+	}
+
+	@Test
+	void shouldKeepTypedTextOnlyInTheDatabase() {
+		firstCommitToGitHub();
+
+		assertThat(only().getMessage()).isEqualTo(TYPED_TEXT);
+	}
+
+	// redelivered updates
+
+	@Test
+	void shouldAcceptRedeliveredUpdateWith200() {
+		firstCommitToGitHub();
+
+		assertThat(postCommit(1L, TYPED_TEXT)).isEqualTo(200);
+	}
+
+	@Test
+	void shouldNotStoreRedeliveredUpdateAgain() {
+		firstCommitToGitHub();
+
+		postCommit(1L, TYPED_TEXT);
+
+		assertThat(repository.count()).isEqualTo(1L);
+	}
+
+	@Test
+	void shouldNotCommitRedeliveredUpdateAgain() {
+		firstCommitToGitHub();
+
+		postCommit(1L, TYPED_TEXT);
+
+		assertThat(GITHUB.commits()).hasSize(1);
+	}
+
+	// concurrency
+
+	@Test
+	void shouldWriteEveryConcurrentCommitExactlyOnceToTheFile() {
+		postConcurrentCommits();
+
+		assertThat(GITHUB.fileContent(MONTH_FILE).lines().toList()).containsExactlyInAnyOrder("Commit 1", "Commit 2",
+				"Commit 3", "Commit 4", "Commit 5", "Commit 6", "Commit 7", "Commit 8", "Commit 9", "Commit 10");
+	}
+
+	@Test
+	void shouldAssignDistinctConsecutiveSequencesToConcurrentCommits() {
+		postConcurrentCommits();
+
 		assertThat(repository.findAll()).extracting(CommitLog::getSequenceNumber)
 			.containsExactlyInAnyOrder(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L, 9L, 10L);
 	}

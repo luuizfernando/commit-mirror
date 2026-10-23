@@ -27,6 +27,12 @@ class CommitLogRepositoryIT {
 
 	private static final Instant NOW = Instant.parse("2026-10-21T15:00:00Z");
 
+	private static final Instant OLD = NOW.minusSeconds(3600);
+
+	private static final Instant THRESHOLD = NOW.minusSeconds(300);
+
+	private static final int MAX_ATTEMPTS = 2;
+
 	@Autowired
 	private CommitLogRepository repository;
 
@@ -38,9 +44,47 @@ class CommitLogRepositoryIT {
 		repository.deleteAll();
 	}
 
-	private CommitLog log(long updateId, long sequence, Instant createdAt) {
-		return CommitLog.create(updateId, 100L, "typed", LocalDate.of(2026, 10, 21), sequence, createdAt);
+	private static CommitLog log(long sequence, Instant createdAt) {
+		return CommitLog.create(sequence, 100L, "typed", LocalDate.of(2026, 10, 21), sequence, createdAt);
 	}
+
+	private CommitLog savePending(long sequence, Instant createdAt) {
+		return repository.saveAndFlush(log(sequence, createdAt));
+	}
+
+	private CommitLog saveFailed(long sequence, int failures, Instant updatedAt) {
+		CommitLog log = log(sequence, OLD);
+		log.markFailed(updatedAt);
+		for (int i = 1; i < failures; i++) {
+			log.reopen(updatedAt);
+			log.markFailed(updatedAt);
+		}
+		return repository.saveAndFlush(log);
+	}
+
+	private CommitLog saveSucceeded(long sequence) {
+		CommitLog log = log(sequence, OLD);
+		log.markSuccess("sha", OLD);
+		return repository.saveAndFlush(log);
+	}
+
+	private List<Long> stalePendingIds() {
+		return repository.findByStatusAndCreatedAtBeforeOrderBySequenceNumber(CommitStatus.PENDING, THRESHOLD)
+			.stream()
+			.map(CommitLog::getId)
+			.toList();
+	}
+
+	private List<Long> retryableFailedIds() {
+		return repository
+			.findByStatusAndAttemptCountLessThanAndUpdatedAtBeforeOrderBySequenceNumber(CommitStatus.FAILED,
+					MAX_ATTEMPTS, THRESHOLD)
+			.stream()
+			.map(CommitLog::getId)
+			.toList();
+	}
+
+	// schema
 
 	@Test
 	void shouldApplyFlywayMigration() {
@@ -51,82 +95,139 @@ class CommitLogRepositoryIT {
 	}
 
 	@Test
-	void shouldPersistAndLoadCommitLog() {
-		CommitLog saved = repository.saveAndFlush(log(1L, 1L, NOW));
+	void shouldPersistAndLoadEveryField() {
+		CommitLog saved = savePending(1L, NOW);
 
 		CommitLog loaded = repository.findById(saved.getId()).orElseThrow();
 
-		assertThat(loaded.getTelegramUpdateId()).isEqualTo(1L);
-		assertThat(loaded.getChatId()).isEqualTo(100L);
-		assertThat(loaded.getMessage()).isEqualTo("typed");
-		assertThat(loaded.getCommitDate()).isEqualTo(LocalDate.of(2026, 10, 21));
-		assertThat(loaded.getStatus()).isEqualTo(CommitStatus.PENDING);
-		assertThat(loaded.getCreatedAt()).isEqualTo(NOW);
+		assertThat(loaded).usingRecursiveComparison().isEqualTo(saved);
 	}
+
+	// constraints
 
 	@Test
 	void shouldRejectDuplicateTelegramUpdateId() {
-		repository.saveAndFlush(log(1L, 1L, NOW));
+		repository.saveAndFlush(CommitLog.create(1L, 100L, "typed", LocalDate.of(2026, 10, 21), 1L, NOW));
 
-		assertThatThrownBy(() -> repository.saveAndFlush(log(1L, 2L, NOW)))
+		assertThatThrownBy(
+				() -> repository.saveAndFlush(CommitLog.create(1L, 100L, "typed", LocalDate.of(2026, 10, 21), 2L, NOW)))
 			.isInstanceOf(DataIntegrityViolationException.class);
 	}
 
 	@Test
 	void shouldRejectDuplicateSequenceNumber() {
-		repository.saveAndFlush(log(1L, 1L, NOW));
+		repository.saveAndFlush(CommitLog.create(1L, 100L, "typed", LocalDate.of(2026, 10, 21), 1L, NOW));
 
-		assertThatThrownBy(() -> repository.saveAndFlush(log(2L, 1L, NOW)))
+		assertThatThrownBy(
+				() -> repository.saveAndFlush(CommitLog.create(2L, 100L, "typed", LocalDate.of(2026, 10, 21), 1L, NOW)))
 			.isInstanceOf(DataIntegrityViolationException.class);
 	}
 
+	// sequence and lookups
+
 	@Test
-	void shouldReturnZeroWhenThereAreNoCommits() {
+	void shouldReturnZeroMaxSequenceWhenThereAreNoCommits() {
 		assertThat(repository.findMaxSequenceNumber()).isZero();
 	}
 
 	@Test
 	void shouldReturnMaxSequenceGlobally() {
-		repository.saveAndFlush(log(1L, 1L, NOW));
-		repository.saveAndFlush(log(2L, 2L, NOW));
+		savePending(1L, NOW);
+		savePending(2L, NOW);
 
 		assertThat(repository.findMaxSequenceNumber()).isEqualTo(2L);
 	}
 
 	@Test
 	void shouldReportExistingUpdateId() {
-		repository.saveAndFlush(log(1L, 1L, NOW));
+		savePending(1L, NOW);
 
 		assertThat(repository.existsByTelegramUpdateId(1L)).isTrue();
-		assertThat(repository.existsByTelegramUpdateId(2L)).isFalse();
 	}
 
 	@Test
-	void shouldFindFailedAndStalePendingRecords() {
-		Instant old = NOW.minusSeconds(3600);
-		CommitLog stalePending = repository.saveAndFlush(log(1L, 1L, old));
-		repository.saveAndFlush(log(2L, 2L, NOW));
-		CommitLog failed = log(3L, 3L, old);
-		failed.markFailed(old);
-		repository.saveAndFlush(failed);
-		CommitLog exhausted = log(4L, 4L, old);
-		exhausted.markFailed(old);
-		exhausted.reopen(old);
-		exhausted.markFailed(old);
-		repository.saveAndFlush(exhausted);
-		CommitLog done = log(5L, 5L, old);
-		done.markSuccess("sha", old);
-		repository.saveAndFlush(done);
+	void shouldReportMissingUpdateId() {
+		savePending(1L, NOW);
 
-		Instant threshold = NOW.minusSeconds(300);
-		List<CommitLog> pending = repository
-			.findByStatusAndCreatedAtBeforeOrderBySequenceNumber(CommitStatus.PENDING, threshold);
-		List<CommitLog> retryable = repository
-			.findByStatusAndAttemptCountLessThanAndUpdatedAtBeforeOrderBySequenceNumber(CommitStatus.FAILED, 2,
-					threshold);
+		assertThat(repository.existsByTelegramUpdateId(2L)).isFalse();
+	}
 
-		assertThat(pending).extracting(CommitLog::getId).containsExactly(stalePending.getId());
-		assertThat(retryable).extracting(CommitLog::getId).containsExactly(failed.getId());
+	// stale pending lookup
+
+	@Test
+	void shouldFindPendingCreatedBeforeThreshold() {
+		CommitLog stale = savePending(1L, OLD);
+
+		assertThat(stalePendingIds()).containsExactly(stale.getId());
+	}
+
+	@Test
+	void shouldNotFindPendingCreatedAfterThreshold() {
+		savePending(1L, NOW);
+
+		assertThat(stalePendingIds()).isEmpty();
+	}
+
+	@Test
+	void shouldNotFindPendingCreatedExactlyAtThreshold() {
+		savePending(1L, THRESHOLD);
+
+		assertThat(stalePendingIds()).isEmpty();
+	}
+
+	@Test
+	void shouldNotFindOtherStatusesAsPending() {
+		saveFailed(1L, 1, OLD);
+		saveSucceeded(2L);
+
+		assertThat(stalePendingIds()).isEmpty();
+	}
+
+	@Test
+	void shouldOrderStalePendingBySequence() {
+		CommitLog second = savePending(2L, OLD);
+		CommitLog first = savePending(1L, OLD);
+
+		assertThat(stalePendingIds()).containsExactly(first.getId(), second.getId());
+	}
+
+	// retryable failed lookup
+
+	@Test
+	void shouldFindFailedWithAttemptsLeftUpdatedBeforeThreshold() {
+		CommitLog failed = saveFailed(1L, 1, OLD);
+
+		assertThat(retryableFailedIds()).containsExactly(failed.getId());
+	}
+
+	@Test
+	void shouldNotFindFailedThatExhaustedItsAttempts() {
+		saveFailed(1L, MAX_ATTEMPTS, OLD);
+
+		assertThat(retryableFailedIds()).isEmpty();
+	}
+
+	@Test
+	void shouldNotFindFailedUpdatedAfterThreshold() {
+		saveFailed(1L, 1, NOW);
+
+		assertThat(retryableFailedIds()).isEmpty();
+	}
+
+	@Test
+	void shouldNotFindOtherStatusesAsRetryable() {
+		savePending(1L, OLD);
+		saveSucceeded(2L);
+
+		assertThat(retryableFailedIds()).isEmpty();
+	}
+
+	@Test
+	void shouldOrderRetryableFailedBySequence() {
+		CommitLog second = saveFailed(2L, 1, OLD);
+		CommitLog first = saveFailed(1L, 1, OLD);
+
+		assertThat(retryableFailedIds()).containsExactly(first.getId(), second.getId());
 	}
 
 }

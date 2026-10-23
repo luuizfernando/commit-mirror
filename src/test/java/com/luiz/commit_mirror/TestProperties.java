@@ -10,16 +10,36 @@ public final class TestProperties {
 	}
 
 	public static AppProperties defaults() {
-		return withTelegram(new AppProperties.Telegram("token", "secret", 42L, "http://telegram"));
+		return withTelegram(telegram());
 	}
 
 	public static AppProperties withTelegram(AppProperties.Telegram telegram) {
-		return new AppProperties(telegram, github(), "America/Sao_Paulo", recovery(), resilience());
+		return new AppProperties(telegram, github(), timeZone(), recovery(), resilience());
+	}
+
+	public static AppProperties withGitHub(AppProperties.GitHub github) {
+		return new AppProperties(telegram(), github, timeZone(), recovery(), resilience());
+	}
+
+	public static AppProperties withTimeZone(String timeZone) {
+		return new AppProperties(telegram(), github(), timeZone, recovery(), resilience());
+	}
+
+	public static AppProperties withRecovery(AppProperties.Recovery recovery) {
+		return new AppProperties(telegram(), github(), timeZone(), recovery, resilience());
+	}
+
+	public static AppProperties.Telegram telegram() {
+		return new AppProperties.Telegram("token", "secret", 42L, "http://telegram");
 	}
 
 	public static AppProperties.GitHub github() {
 		return new AppProperties.GitHub("gh-token", "owner", "repo", "main", "http://github", "logs", "Author Name",
 				"author@example.com");
+	}
+
+	public static String timeZone() {
+		return "America/Sao_Paulo";
 	}
 
 	public static AppProperties.Recovery recovery() {

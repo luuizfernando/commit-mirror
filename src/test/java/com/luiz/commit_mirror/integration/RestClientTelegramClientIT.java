@@ -20,9 +20,11 @@ import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.luiz.commit_mirror.TestProperties;
 import com.luiz.commit_mirror.config.AppProperties;
 
-class RestClientTelegramClientTest {
+class RestClientTelegramClientIT {
 
 	private static final String BOT_TOKEN = "123456:SECRET-BOT-TOKEN";
+
+	private static final String SEND_MESSAGE_PATH = "/bot" + BOT_TOKEN + "/sendMessage";
 
 	private WireMockServer server;
 
@@ -34,7 +36,8 @@ class RestClientTelegramClientTest {
 		server.start();
 		RestClient restClient = RestClient.builder()
 			.baseUrl(server.baseUrl())
-			.requestFactory(new JdkClientHttpRequestFactory(HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build()))
+			.requestFactory(new JdkClientHttpRequestFactory(
+					HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build()))
 			.build();
 		client = new RestClientTelegramClient(restClient,
 				TestProperties.withTelegram(new AppProperties.Telegram(BOT_TOKEN, "secret", 42L, server.baseUrl())));
@@ -45,36 +48,65 @@ class RestClientTelegramClientTest {
 		server.stop();
 	}
 
+	private void stubSendMessageStatus(int status) {
+		server.stubFor(post(urlEqualTo(SEND_MESSAGE_PATH)).willReturn(aResponse().withStatus(status)
+			.withHeader("Content-Type", "application/json")
+			.withBody("{\"ok\":" + (status == 200) + "}")));
+	}
+
+	private void sendHello() {
+		client.sendMessage(100L, "hello");
+	}
+
+	// happy path
+
 	@Test
 	void shouldPostSendMessageWithChatIdAndText() {
-		server.stubFor(post(urlEqualTo("/bot" + BOT_TOKEN + "/sendMessage")).willReturn(aResponse().withStatus(200)
-			.withHeader("Content-Type", "application/json")
-			.withBody("{\"ok\":true}")));
+		stubSendMessageStatus(200);
 
-		client.sendMessage(100L, "hello");
+		sendHello();
 
-		server.verify(postRequestedFor(urlEqualTo("/bot" + BOT_TOKEN + "/sendMessage"))
+		server.verify(postRequestedFor(urlEqualTo(SEND_MESSAGE_PATH))
 			.withRequestBody(equalToJson("{\"chat_id\":100,\"text\":\"hello\"}")));
 	}
 
+	// error handling
+
 	@Test
 	void shouldThrowTelegramApiExceptionOnServerError() {
-		server.stubFor(post(urlEqualTo("/bot" + BOT_TOKEN + "/sendMessage")).willReturn(aResponse().withStatus(500)));
+		stubSendMessageStatus(500);
 
-		assertThatThrownBy(() -> client.sendMessage(100L, "hello")).isInstanceOf(TelegramApiException.class);
+		assertThatThrownBy(this::sendHello).isInstanceOf(TelegramApiException.class);
 	}
 
 	@Test
-	void shouldNotLeakBotTokenInExceptionMessage() {
-		server.stubFor(post(urlEqualTo("/bot" + BOT_TOKEN + "/sendMessage")).willReturn(aResponse().withStatus(500)));
-		assertThatThrownBy(() -> client.sendMessage(100L, "hello")).isInstanceOf(TelegramApiException.class)
-			.hasMessageNotContaining(BOT_TOKEN)
-			.hasNoCause();
+	void shouldThrowTelegramApiExceptionOnClientError() {
+		stubSendMessageStatus(400);
 
+		assertThatThrownBy(this::sendHello).isInstanceOf(TelegramApiException.class);
+	}
+
+	@Test
+	void shouldThrowTelegramApiExceptionWhenConnectionFails() {
 		server.stop();
-		assertThatThrownBy(() -> client.sendMessage(100L, "hello")).isInstanceOf(TelegramApiException.class)
-			.hasMessageNotContaining(BOT_TOKEN)
-			.hasNoCause();
+
+		assertThatThrownBy(this::sendHello).isInstanceOf(TelegramApiException.class);
+	}
+
+	// secret protection
+
+	@Test
+	void shouldNotLeakBotTokenWhenTelegramReturnsAnError() {
+		stubSendMessageStatus(500);
+
+		assertThatThrownBy(this::sendHello).hasMessageNotContaining(BOT_TOKEN).hasNoCause();
+	}
+
+	@Test
+	void shouldNotLeakBotTokenWhenConnectionFails() {
+		server.stop();
+
+		assertThatThrownBy(this::sendHello).hasMessageNotContaining(BOT_TOKEN).hasNoCause();
 	}
 
 }

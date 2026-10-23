@@ -18,64 +18,187 @@ class CommitLogTest {
 		return CommitLog.create(10L, 100L, "typed", LocalDate.of(2026, 10, 21), 7L, CREATED);
 	}
 
+	private static CommitLog succeededLog() {
+		CommitLog log = newLog();
+		log.markSuccess("abc", CREATED);
+		return log;
+	}
+
+	private static CommitLog failedLog() {
+		CommitLog log = newLog();
+		log.markFailed(CREATED);
+		return log;
+	}
+
+	// creation
+
 	@Test
 	void shouldStartAsPending() {
-		CommitLog log = newLog();
-
-		assertThat(log.getStatus()).isEqualTo(CommitStatus.PENDING);
-		assertThat(log.getAttemptCount()).isZero();
-		assertThat(log.getGithubCommitSha()).isNull();
-		assertThat(log.getSequenceNumber()).isEqualTo(7L);
-		assertThat(log.getCreatedAt()).isEqualTo(CREATED);
-		assertThat(log.getUpdatedAt()).isEqualTo(CREATED);
+		assertThat(newLog().getStatus()).isEqualTo(CommitStatus.PENDING);
 	}
 
 	@Test
-	void shouldMarkSuccessWithCommitSha() {
+	void shouldStartWithZeroAttempts() {
+		assertThat(newLog().getAttemptCount()).isZero();
+	}
+
+	@Test
+	void shouldStartWithoutCommitSha() {
+		assertThat(newLog().getGithubCommitSha()).isNull();
+	}
+
+	@Test
+	void shouldKeepTheGivenSequenceNumber() {
+		assertThat(newLog().getSequenceNumber()).isEqualTo(7L);
+	}
+
+	@Test
+	void shouldStampCreationTime() {
+		assertThat(newLog().getCreatedAt()).isEqualTo(CREATED);
+	}
+
+	@Test
+	void shouldStartWithUpdateTimeEqualToCreationTime() {
+		assertThat(newLog().getUpdatedAt()).isEqualTo(CREATED);
+	}
+
+	// success
+
+	@Test
+	void shouldMoveToSuccessWhenMarkedAsSuccess() {
 		CommitLog log = newLog();
 
 		log.markSuccess("abc123", LATER);
 
 		assertThat(log.getStatus()).isEqualTo(CommitStatus.SUCCESS);
-		assertThat(log.getGithubCommitSha()).isEqualTo("abc123");
-		assertThat(log.getUpdatedAt()).isEqualTo(LATER);
 	}
 
 	@Test
-	void shouldMarkFailedAndCountTheAttempt() {
+	void shouldStoreCommitShaWhenMarkedAsSuccess() {
+		CommitLog log = newLog();
+
+		log.markSuccess("abc123", LATER);
+
+		assertThat(log.getGithubCommitSha()).isEqualTo("abc123");
+	}
+
+	@Test
+	void shouldStampUpdateTimeWhenMarkedAsSuccess() {
+		CommitLog log = newLog();
+
+		log.markSuccess("abc123", LATER);
+
+		assertThat(log.getUpdatedAt()).isEqualTo(LATER);
+	}
+
+	// failure
+
+	@Test
+	void shouldMoveToFailedWhenMarkedAsFailed() {
 		CommitLog log = newLog();
 
 		log.markFailed(LATER);
 
 		assertThat(log.getStatus()).isEqualTo(CommitStatus.FAILED);
+	}
+
+	@Test
+	void shouldCountTheAttemptWhenMarkedAsFailed() {
+		CommitLog log = newLog();
+
+		log.markFailed(LATER);
+
 		assertThat(log.getAttemptCount()).isEqualTo(1);
+	}
+
+	@Test
+	void shouldStampUpdateTimeWhenMarkedAsFailed() {
+		CommitLog log = newLog();
+
+		log.markFailed(LATER);
+
 		assertThat(log.getUpdatedAt()).isEqualTo(LATER);
 	}
 
 	@Test
-	void shouldRejectSuccessWhenAlreadySucceeded() {
-		CommitLog log = newLog();
-		log.markSuccess("abc", LATER);
+	void shouldAccumulateAttemptsAcrossReprocessing() {
+		CommitLog log = failedLog();
+		log.reopen(LATER);
 
-		assertThatThrownBy(() -> log.markSuccess("def", LATER)).isInstanceOf(IllegalStateException.class);
-		assertThatThrownBy(() -> log.markFailed(LATER)).isInstanceOf(IllegalStateException.class);
+		log.markFailed(LATER);
+
+		assertThat(log.getAttemptCount()).isEqualTo(2);
 	}
 
+	// reopen
+
 	@Test
-	void shouldAllowReprocessingFailedRecordKeepingSequence() {
-		CommitLog log = newLog();
-		log.markFailed(LATER);
+	void shouldMoveFailedRecordBackToPendingWhenReopened() {
+		CommitLog log = failedLog();
 
 		log.reopen(LATER);
 
 		assertThat(log.getStatus()).isEqualTo(CommitStatus.PENDING);
-		assertThat(log.getSequenceNumber()).isEqualTo(7L);
+	}
+
+	@Test
+	void shouldKeepAttemptCountWhenReopened() {
+		CommitLog log = failedLog();
+
+		log.reopen(LATER);
+
 		assertThat(log.getAttemptCount()).isEqualTo(1);
 	}
 
 	@Test
-	void shouldRejectReopenUnlessFailed() {
+	void shouldStampUpdateTimeWhenReopened() {
+		CommitLog log = failedLog();
+
+		log.reopen(LATER);
+
+		assertThat(log.getUpdatedAt()).isEqualTo(LATER);
+	}
+
+	// invalid transitions
+
+	@Test
+	void shouldRejectSuccessWhenAlreadySucceeded() {
+		CommitLog log = succeededLog();
+
+		assertThatThrownBy(() -> log.markSuccess("def", LATER)).isInstanceOf(IllegalStateException.class);
+	}
+
+	@Test
+	void shouldRejectFailureWhenAlreadySucceeded() {
+		CommitLog log = succeededLog();
+
+		assertThatThrownBy(() -> log.markFailed(LATER)).isInstanceOf(IllegalStateException.class);
+	}
+
+	@Test
+	void shouldRejectSuccessWhenFailedWithoutReopening() {
+		CommitLog log = failedLog();
+
+		assertThatThrownBy(() -> log.markSuccess("abc", LATER)).isInstanceOf(IllegalStateException.class);
+	}
+
+	@Test
+	void shouldRejectFailureWhenAlreadyFailed() {
+		CommitLog log = failedLog();
+
+		assertThatThrownBy(() -> log.markFailed(LATER)).isInstanceOf(IllegalStateException.class);
+	}
+
+	@Test
+	void shouldRejectReopenWhenPending() {
 		CommitLog log = newLog();
+
+		assertThatThrownBy(() -> log.reopen(LATER)).isInstanceOf(IllegalStateException.class);
+	}
+
+	@Test
+	void shouldRejectReopenWhenSucceeded() {
+		CommitLog log = succeededLog();
 
 		assertThatThrownBy(() -> log.reopen(LATER)).isInstanceOf(IllegalStateException.class);
 	}

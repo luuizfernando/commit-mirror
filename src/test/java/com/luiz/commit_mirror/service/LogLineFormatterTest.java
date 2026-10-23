@@ -14,7 +14,17 @@ class LogLineFormatterTest {
 	}
 
 	@Test
-	void shouldNotIncludeDate() {
+	void shouldFormatTheFirstSequence() {
+		assertThat(formatter.format(1L)).isEqualTo("Commit 1");
+	}
+
+	@Test
+	void shouldFormatTheMaximumSequence() {
+		assertThat(formatter.format(Long.MAX_VALUE)).isEqualTo("Commit 9223372036854775807");
+	}
+
+	@Test
+	void shouldNotIncludeDateOrTimeInLine() {
 		assertThat(formatter.format(7L)).doesNotContainPattern("\\d{4}-\\d{2}|:\\d{2}");
 	}
 
