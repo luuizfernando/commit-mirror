@@ -2,6 +2,7 @@ name: pipeline
 
 # Environments by branch: dev (CI only, local development), homolog (deploy to the homolog stack),
 # main (release + deploy to production). Changes are promoted dev -> homolog -> main through PRs.
+# Only main is tagged and released; homolog deploys release candidates of the next version.
 on:
   push:
     branches: [main, homolog, dev]
