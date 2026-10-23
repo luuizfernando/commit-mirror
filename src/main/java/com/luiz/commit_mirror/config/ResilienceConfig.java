@@ -32,24 +32,24 @@ public class ResilienceConfig {
 
 	public static Retry retry(AppProperties.Resilience settings) {
 		RetryConfig config = RetryConfig.custom()
-			.maxAttempts(settings.retryMaxAttempts())
-			.intervalFunction(IntervalFunction.ofExponentialRandomBackoff(settings.retryInitialBackoff(), 2.0, 0.5))
-			.retryExceptions(GitHubConflictException.class, GitHubTransientException.class)
-			.build();
+				.maxAttempts(settings.retryMaxAttempts())
+				.intervalFunction(IntervalFunction.ofExponentialRandomBackoff(settings.retryInitialBackoff(), 2.0, 0.5))
+				.retryExceptions(GitHubConflictException.class, GitHubTransientException.class)
+				.build();
 		return Retry.of(NAME, config);
 	}
 
 	public static CircuitBreaker circuitBreaker(AppProperties.Resilience settings) {
 		CircuitBreakerConfig config = CircuitBreakerConfig.custom()
-			.slidingWindowType(CircuitBreakerConfig.SlidingWindowType.COUNT_BASED)
-			.slidingWindowSize(settings.circuitWindowSize())
-			.minimumNumberOfCalls(settings.circuitMinimumCalls())
-			.failureRateThreshold(settings.circuitFailureRatePercent())
-			.waitDurationInOpenState(settings.circuitOpenDuration())
-			.permittedNumberOfCallsInHalfOpenState(settings.circuitHalfOpenCalls())
-			.recordExceptions(GitHubTransientException.class)
-			.ignoreExceptions(GitHubConflictException.class, GitHubPermanentException.class)
-			.build();
+				.slidingWindowType(CircuitBreakerConfig.SlidingWindowType.COUNT_BASED)
+				.slidingWindowSize(settings.circuitWindowSize())
+				.minimumNumberOfCalls(settings.circuitMinimumCalls())
+				.failureRateThreshold(settings.circuitFailureRatePercent())
+				.waitDurationInOpenState(settings.circuitOpenDuration())
+				.permittedNumberOfCallsInHalfOpenState(settings.circuitHalfOpenCalls())
+				.recordExceptions(GitHubTransientException.class)
+				.ignoreExceptions(GitHubConflictException.class, GitHubPermanentException.class)
+				.build();
 		return CircuitBreaker.of(NAME, config);
 	}
 

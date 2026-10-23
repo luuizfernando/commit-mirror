@@ -43,8 +43,7 @@ public class CommitLogService {
 		for (int attempt = 1; attempt <= maxAttempts; attempt++) {
 			try {
 				return newTransaction.execute(status -> insert(updateId, chatId, message));
-			}
-			catch (DataIntegrityViolationException ex) {
+			} catch (DataIntegrityViolationException ex) {
 				if (repository.existsByTelegramUpdateId(updateId)) {
 					return Optional.empty();
 				}

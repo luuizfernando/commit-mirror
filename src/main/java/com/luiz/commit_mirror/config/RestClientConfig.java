@@ -27,9 +27,9 @@ public class RestClientConfig {
 
 	private static RestClient restClient(String baseUrl) {
 		JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(HttpClient.newBuilder()
-			.version(HttpClient.Version.HTTP_1_1)
-			.connectTimeout(CONNECT_TIMEOUT)
-			.build());
+				.version(HttpClient.Version.HTTP_1_1)
+				.connectTimeout(CONNECT_TIMEOUT)
+				.build());
 		requestFactory.setReadTimeout(READ_TIMEOUT);
 		return RestClient.builder().baseUrl(baseUrl).requestFactory(requestFactory).build();
 	}
