@@ -220,4 +220,19 @@ class CommitLogRepositoryIT {
 		assertThat(retryableFailedIds()).containsExactly(first.getId(), second.getId());
 	}
 
+	@Test
+	void shouldCountZeroWhenTableIsEmpty() {
+		assertThat(repository.countByStatus(CommitStatus.SUCCESS)).isZero();
+	}
+
+	@Test
+	void shouldCountOnlyRecordsWithTheRequestedStatus() {
+		saveSucceeded(1L);
+		saveSucceeded(2L);
+		savePending(3L, NOW);
+		saveFailed(4L, 1, OLD);
+
+		assertThat(repository.countByStatus(CommitStatus.SUCCESS)).isEqualTo(2L);
+	}
+
 }

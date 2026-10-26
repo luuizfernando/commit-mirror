@@ -43,7 +43,7 @@ O Telegram chama a API por HTTPS (webhook), em vez de a API consultar o Telegram
 
 ### 2.4 Padrão de comandos
 
-O `/commit` é implementado com o **Command Pattern**. Na v1 existe apenas o `/commit`.
+Os comandos são implementados com o **Command Pattern**: cada um é um `BotCommand` resolvido pelo `CommandRegistry`. Na v1 existia apenas o `/commit`; depois foi adicionado o `/status` (seção 5).
 
 ### 2.5 Repositório e arquivo de log
 
@@ -140,4 +140,15 @@ Red -> Green -> Refactor, um teste por vez; nenhuma regra de negócio sem teste 
 
 ## 4. Escopo da v1
 
-Somente o comando `/commit`. Outros comandos (como `/status`) ficam para versões futuras.
+Somente o comando `/commit`.
+
+## 5. Evoluções
+
+### 5.1 Comando `/status`
+
+O `/status` responde quantos commits já foram salvos no gráfico desde o início do uso do serviço. O valor é um `COUNT` dos registros de `commit_log` com `status = SUCCESS`, ou seja, apenas os que chegaram ao GitHub. Registros `PENDING` e `FAILED` não entram na contagem.
+
+- Resposta em frase única: `Nenhum commit salvo ainda.` (0), `Você já salvou 1 commit com o Commit Mirror.` (1) ou `Você já salvou N commits com o Commit Mirror.` (N).
+- Argumentos após o comando são ignorados.
+- É somente leitura: não grava no banco nem no GitHub.
+- Passa pelas mesmas validações do webhook (secret e allowlist).

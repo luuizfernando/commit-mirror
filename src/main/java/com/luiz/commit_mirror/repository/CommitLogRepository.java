@@ -16,6 +16,8 @@ public interface CommitLogRepository extends JpaRepository<CommitLog, Long> {
 	@Query("select coalesce(max(c.sequenceNumber), 0) from CommitLog c")
 	long findMaxSequenceNumber();
 
+	long countByStatus(CommitStatus status);
+
 	List<CommitLog> findByStatusAndCreatedAtBeforeOrderBySequenceNumber(CommitStatus status, Instant createdBefore);
 
 	List<CommitLog> findByStatusAndAttemptCountLessThanAndUpdatedAtBeforeOrderBySequenceNumber(CommitStatus status,

@@ -13,6 +13,7 @@ import org.springframework.transaction.support.TransactionOperations;
 
 import com.luiz.commit_mirror.config.AppProperties;
 import com.luiz.commit_mirror.domain.CommitLog;
+import com.luiz.commit_mirror.domain.CommitStatus;
 import com.luiz.commit_mirror.repository.CommitLogRepository;
 
 @Service
@@ -51,6 +52,10 @@ public class CommitLogService {
 			}
 		}
 		throw new IllegalStateException("Could not allocate a sequence number after " + maxAttempts + " attempts");
+	}
+
+	public long countMirroredCommits() {
+		return repository.countByStatus(CommitStatus.SUCCESS);
 	}
 
 	private Optional<CommitLog> insert(long updateId, long chatId, String message) {

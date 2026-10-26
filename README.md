@@ -20,6 +20,15 @@ Telegram (/commit ...) ──webhook──▶ API Spring Boot ──▶ PostgreS
 4. A linha `Commit N` é acrescentada ao arquivo do mês no GitHub, com o e-mail do autor vinculado à sua conta, o que faz o commit contar no gráfico.
 5. O bot responde confirmando o registro.
 
+## Comandos
+
+| Comando | O que faz |
+| --- | --- |
+| `/commit <mensagem>` | Registra o commit e acrescenta `Commit N` ao log do mês no GitHub. Sem mensagem, responde com o uso. |
+| `/status` | Mostra quantos commits já foram salvos no gráfico, contando só os que chegaram ao GitHub (`status = SUCCESS`). |
+
+Os comandos são beans `BotCommand` em `service/command`, coletados pelo `CommandRegistry`. Um comando novo é só um `@Component` novo.
+
 ### Resiliência
 
 - As escritas no GitHub passam por um serializador (`LogWriteSerializer`, worker único), evitando conflitos de SHA.
@@ -76,6 +85,7 @@ src/main/java/com/luiz/commit_mirror/
 ├── integration/  # gateways HTTP (GitHub, Telegram)
 ├── repository/   # acesso ao banco
 └── service/      # parser de comandos, escrita do log, recuperação
+    └── command/  # comandos do bot (/commit, /status)
 deploy/           # scripts de deploy, webhook e smoke test
 ADR/              # decisões de arquitetura
 commit-logs/      # logs mensais gerados pelo serviço

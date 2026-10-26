@@ -176,4 +176,11 @@ class CommitLogServiceTest {
 		verify(repository, times(1)).saveAndFlush(any());
 	}
 
+	@Test
+	void shouldCountOnlySuccessfulCommitsAsMirrored() {
+		when(repository.countByStatus(CommitStatus.SUCCESS)).thenReturn(3L);
+
+		assertThat(service.countMirroredCommits()).isEqualTo(3L);
+	}
+
 }
