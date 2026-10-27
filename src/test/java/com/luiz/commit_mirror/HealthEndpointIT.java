@@ -14,12 +14,12 @@ class HealthEndpointIT extends AbstractFlowIT {
 	private static int status(int port, String path) {
 		return RestClient.create()
 			.get()
-			.uri("http://localhost:{port}{path}", port, path)
+			.uri("http://localhost:{port}" + path, port)
 			.exchange((request, response) -> response.getStatusCode().value());
 	}
 
 	private static String body(int port, String path) {
-		return RestClient.create().get().uri("http://localhost:{port}{path}", port, path).retrieve().body(String.class);
+		return RestClient.create().get().uri("http://localhost:{port}" + path, port).retrieve().body(String.class);
 	}
 
 	@Test
