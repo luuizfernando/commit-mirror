@@ -5,16 +5,19 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 public final class FakeTelegramServer {
 
 	public record Sent(long chatId, String text) {
 	}
+
+	private static final JsonMapper JSON = JsonMapper.builder().build();
 
 	private final List<Sent> sent = new CopyOnWriteArrayList<>();
 
@@ -64,17 +67,21 @@ public final class FakeTelegramServer {
 			response = "{\"ok\":false}";
 		}
 		else if (exchange.getRequestURI().getPath().endsWith("/sendMessage")) {
-			Matcher chat = Pattern.compile("\"chat_id\"\\s*:\\s*(-?\\d+)").matcher(body);
-			Matcher text = Pattern.compile("\"text\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"").matcher(body);
-			if (chat.find() && text.find()) {
-				sent.add(new Sent(Long.parseLong(chat.group(1)), text.group(1)));
-			}
+			recordSentMessage(JSON.readTree(body));
 		}
 		byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
 		exchange.getResponseHeaders().set("Content-Type", "application/json");
 		exchange.sendResponseHeaders(status, bytes.length);
 		exchange.getResponseBody().write(bytes);
 		exchange.close();
+	}
+
+	private void recordSentMessage(JsonNode message) {
+		JsonNode chatId = message.get("chat_id");
+		JsonNode text = message.get("text");
+		if (chatId != null && text != null) {
+			sent.add(new Sent(chatId.asLong(), text.asString()));
+		}
 	}
 
 }
