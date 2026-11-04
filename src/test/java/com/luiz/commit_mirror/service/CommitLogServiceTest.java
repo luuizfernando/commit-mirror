@@ -14,6 +14,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -22,6 +23,8 @@ import org.springframework.transaction.support.TransactionOperations;
 import com.luiz.commit_mirror.TestProperties;
 import com.luiz.commit_mirror.domain.CommitLog;
 import com.luiz.commit_mirror.domain.CommitStatus;
+import com.luiz.commit_mirror.domain.DailyCommitCount;
+import com.luiz.commit_mirror.domain.MostActiveDays;
 import com.luiz.commit_mirror.repository.CommitLogRepository;
 
 class CommitLogServiceTest {
@@ -181,6 +184,45 @@ class CommitLogServiceTest {
 		when(repository.countByStatus(CommitStatus.SUCCESS)).thenReturn(3L);
 
 		assertThat(service.countMirroredCommits()).isEqualTo(3L);
+	}
+
+	private static final LocalDate OCT_15 = LocalDate.of(2026, 10, 15);
+
+	private static final LocalDate OCT_16 = LocalDate.of(2026, 10, 16);
+
+	private static final LocalDate OCT_17 = LocalDate.of(2026, 10, 17);
+
+	private void successfulDailyCountsAre(DailyCommitCount... dailyCounts) {
+		when(repository.countDailyByStatusMostActiveFirst(CommitStatus.SUCCESS)).thenReturn(List.of(dailyCounts));
+	}
+
+	@Test
+	void shouldFindNoMostActiveDaysWhenNothingWasMirrored() {
+		successfulDailyCountsAre();
+
+		assertThat(service.findMostActiveDays()).isEmpty();
+	}
+
+	@Test
+	void shouldFindTheOnlyDayWithCommits() {
+		successfulDailyCountsAre(new DailyCommitCount(OCT_15, 3L));
+
+		assertThat(service.findMostActiveDays()).contains(new MostActiveDays(List.of(OCT_15), 3L));
+	}
+
+	@Test
+	void shouldKeepOnlyTheDayWithTheHighestCount() {
+		successfulDailyCountsAre(new DailyCommitCount(OCT_16, 5L), new DailyCommitCount(OCT_15, 2L));
+
+		assertThat(service.findMostActiveDays()).contains(new MostActiveDays(List.of(OCT_16), 5L));
+	}
+
+	@Test
+	void shouldKeepEveryDayTiedWithTheHighestCount() {
+		successfulDailyCountsAre(new DailyCommitCount(OCT_15, 4L), new DailyCommitCount(OCT_17, 4L),
+				new DailyCommitCount(OCT_16, 1L));
+
+		assertThat(service.findMostActiveDays()).contains(new MostActiveDays(List.of(OCT_15, OCT_17), 4L));
 	}
 
 }

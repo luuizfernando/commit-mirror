@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 
 import com.luiz.commit_mirror.domain.CommitLog;
 import com.luiz.commit_mirror.domain.CommitStatus;
+import com.luiz.commit_mirror.domain.DailyCommitCount;
 
 public interface CommitLogRepository extends JpaRepository<CommitLog, Long> {
 
@@ -17,6 +18,15 @@ public interface CommitLogRepository extends JpaRepository<CommitLog, Long> {
 	long findMaxSequenceNumber();
 
 	long countByStatus(CommitStatus status);
+
+	@Query("""
+			select new com.luiz.commit_mirror.domain.DailyCommitCount(c.commitDate, count(c))
+			from CommitLog c
+			where c.status = :status
+			group by c.commitDate
+			order by count(c) desc, c.commitDate asc
+			""")
+	List<DailyCommitCount> countDailyByStatusMostActiveFirst(CommitStatus status);
 
 	List<CommitLog> findByStatusAndCreatedAtBeforeOrderBySequenceNumber(CommitStatus status, Instant createdBefore);
 

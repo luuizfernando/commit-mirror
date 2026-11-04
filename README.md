@@ -25,7 +25,7 @@ Telegram (/commit ...) ──webhook──▶ API Spring Boot ──▶ PostgreS
 | Comando | O que faz |
 | --- | --- |
 | `/commit <mensagem>` | Registra o commit e acrescenta `Commit N` ao log do mês no GitHub. Sem mensagem, responde com o uso. |
-| `/status` | Mostra quantos commits já foram salvos no gráfico, contando só os que chegaram ao GitHub (`status = SUCCESS`). |
+| `/status` | Mostra quantos commits já foram salvos no gráfico e o dia mais ativo (todos os dias empatados, se houver empate), contando só os que chegaram ao GitHub (`status = SUCCESS`). |
 
 Os comandos são beans `BotCommand` em `service/command`, coletados pelo `CommandRegistry`. Um comando novo é só um `@Component` novo.
 

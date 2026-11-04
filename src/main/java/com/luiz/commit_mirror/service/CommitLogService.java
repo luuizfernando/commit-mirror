@@ -2,6 +2,8 @@ package com.luiz.commit_mirror.service;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 
 import org.slf4j.Logger;
@@ -14,6 +16,8 @@ import org.springframework.transaction.support.TransactionOperations;
 import com.luiz.commit_mirror.config.AppProperties;
 import com.luiz.commit_mirror.domain.CommitLog;
 import com.luiz.commit_mirror.domain.CommitStatus;
+import com.luiz.commit_mirror.domain.DailyCommitCount;
+import com.luiz.commit_mirror.domain.MostActiveDays;
 import com.luiz.commit_mirror.repository.CommitLogRepository;
 
 @Service
@@ -56,6 +60,19 @@ public class CommitLogService {
 
 	public long countMirroredCommits() {
 		return repository.countByStatus(CommitStatus.SUCCESS);
+	}
+
+	public Optional<MostActiveDays> findMostActiveDays() {
+		List<DailyCommitCount> dailyCounts = repository.countDailyByStatusMostActiveFirst(CommitStatus.SUCCESS);
+		if (dailyCounts.isEmpty()) {
+			return Optional.empty();
+		}
+		long highestCount = dailyCounts.getFirst().commits();
+		List<LocalDate> dates = dailyCounts.stream()
+			.takeWhile(daily -> daily.commits() == highestCount)
+			.map(DailyCommitCount::date)
+			.toList();
+		return Optional.of(new MostActiveDays(dates, highestCount));
 	}
 
 	private Optional<CommitLog> insert(long updateId, long chatId, String message) {

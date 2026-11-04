@@ -19,6 +19,7 @@ import org.springframework.test.context.ActiveProfiles;
 import com.luiz.commit_mirror.TestcontainersConfiguration;
 import com.luiz.commit_mirror.domain.CommitLog;
 import com.luiz.commit_mirror.domain.CommitStatus;
+import com.luiz.commit_mirror.domain.DailyCommitCount;
 
 @Import(TestcontainersConfiguration.class)
 @ActiveProfiles("test")
@@ -233,6 +234,64 @@ class CommitLogRepositoryIT {
 		saveFailed(4L, 1, OLD);
 
 		assertThat(repository.countByStatus(CommitStatus.SUCCESS)).isEqualTo(2L);
+	}
+
+	private static final LocalDate OCT_15 = LocalDate.of(2026, 10, 15);
+
+	private static final LocalDate OCT_16 = LocalDate.of(2026, 10, 16);
+
+	private static final LocalDate OCT_17 = LocalDate.of(2026, 10, 17);
+
+	private void saveSucceededOn(long sequence, LocalDate commitDate) {
+		CommitLog log = CommitLog.create(sequence, 100L, "typed", commitDate, sequence, OLD);
+		log.markSuccess("sha", OLD);
+		repository.saveAndFlush(log);
+	}
+
+	private List<DailyCommitCount> successfulDailyCounts() {
+		return repository.countDailyByStatusMostActiveFirst(CommitStatus.SUCCESS);
+	}
+
+	@Test
+	void shouldReturnNoDailyCountsWhenTableIsEmpty() {
+		assertThat(successfulDailyCounts()).isEmpty();
+	}
+
+	@Test
+	void shouldCountCommitsPerDay() {
+		saveSucceededOn(1L, OCT_15);
+		saveSucceededOn(2L, OCT_15);
+		saveSucceededOn(3L, OCT_15);
+
+		assertThat(successfulDailyCounts()).containsExactly(new DailyCommitCount(OCT_15, 3L));
+	}
+
+	@Test
+	void shouldOrderDailyCountsByMostCommitsFirst() {
+		saveSucceededOn(1L, OCT_15);
+		saveSucceededOn(2L, OCT_16);
+		saveSucceededOn(3L, OCT_16);
+
+		assertThat(successfulDailyCounts()).containsExactly(new DailyCommitCount(OCT_16, 2L),
+				new DailyCommitCount(OCT_15, 1L));
+	}
+
+	@Test
+	void shouldOrderTiedDailyCountsByEarliestDateFirst() {
+		saveSucceededOn(1L, OCT_17);
+		saveSucceededOn(2L, OCT_15);
+
+		assertThat(successfulDailyCounts()).containsExactly(new DailyCommitCount(OCT_15, 1L),
+				new DailyCommitCount(OCT_17, 1L));
+	}
+
+	@Test
+	void shouldCountPerDayOnlyRecordsWithTheRequestedStatus() {
+		saveSucceeded(1L);
+		savePending(2L, NOW);
+		saveFailed(3L, 1, OLD);
+
+		assertThat(successfulDailyCounts()).containsExactly(new DailyCommitCount(LocalDate.of(2026, 10, 21), 1L));
 	}
 
 }

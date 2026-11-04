@@ -54,7 +54,8 @@ class StatusFlowIT extends AbstractFlowIT {
 		postStatus(ALLOWED_USER);
 		awaitTelegramMessages(3);
 
-		assertThat(lastSentMessage()).isEqualTo(new Sent(CHAT_ID, "Você já salvou 2 commits com o Commit Mirror."));
+		assertThat(lastSentMessage()).isEqualTo(new Sent(CHAT_ID,
+				"Você já salvou 2 commits com o Commit Mirror.\nSeu dia mais ativo foi 21/10/2026, com 2 commits."));
 	}
 
 	@Test
